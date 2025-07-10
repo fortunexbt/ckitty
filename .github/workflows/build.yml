@@ -1,0 +1,71 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libncurses5-dev libncursesw5-dev
+    
+    - name: Build all versions
+      run: make all
+    
+    - name: Run basic test
+      run: |
+        ./ckitty_v3 -h
+        timeout 5s ./ckitty_v3 -c || true
+    
+    - name: Check binary sizes
+      run: |
+        ls -la ckitty*
+        file ckitty*
+
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install dependencies
+      run: |
+        brew install ncurses
+    
+    - name: Build all versions
+      run: make all
+    
+    - name: Run basic test
+      run: |
+        ./ckitty_v3 -h
+        timeout 5s ./ckitty_v3 -c || true
+
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install analysis tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cppcheck clang-format
+    
+    - name: Run cppcheck
+      run: |
+        cppcheck --enable=all --error-exitcode=1 --suppress=missingIncludeSystem *.c || true
+    
+    - name: Check formatting
+      run: |
+        clang-format --version
+        # Just check, don't enforce for now
+        clang-format -n *.c || true

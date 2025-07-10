@@ -1,0 +1,45 @@
+# Compiled binaries
+ckitty
+ckitty_v2
+ckitty_v3
+*.o
+*.out
+*.exe
+
+# Build artifacts
+build/
+bin/
+dist/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Dependency directories
+deps/
+vendor/
+
+# Test coverage
+*.gcov
+*.gcda
+*.gcno
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# OS specific
+Thumbs.db
+desktop.ini
