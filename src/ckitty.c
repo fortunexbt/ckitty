@@ -224,8 +224,8 @@ static void draw_topbar(int width, const Config* cfg, const ckitty_kitty* kitty,
     if (color_on) attron(COLOR_PAIR(CKCLR_ACCENT) | A_BOLD);
     else attron(A_BOLD);
     (void)mvhline(0, 0, ' ', width);
-    (void)mvaddnstr(0, 2, " ckitty ", width - 4);
-    if (meta_len < (size_t)width - 14U) {
+    if (width > 4) (void)mvaddnstr(0, 2, " ckitty ", width - 4);
+    if (width > 14 && meta_len < (size_t)(width - 14)) {
         int meta_x = width - (int)meta_len - 2;
         (void)mvaddnstr(0, meta_x, meta, (int)meta_len);
     }
@@ -271,6 +271,60 @@ static void draw_footer(int width, int height, const Config* cfg, const ckitty_k
     int hint_x = width - (int)strlen(hints);
     if (hint_x > (int)strlen(left) + 2) (void)mvaddnstr(height - 1, hint_x, hints, width - hint_x);
     if (color_on) attroff(COLOR_PAIR(CKCLR_ACCENT));
+}
+
+static void draw_tagline(int width, int height, const Config* cfg, const char* message, uint64_t frame) {
+    if (!cfg || width <= 0 || height < 2) return;
+    if (message) {
+        draw_centered_text(1, width, message);
+        return;
+    }
+
+    static const char* const dots[] = {"", ".", "..", "..."};
+    char tagline[64];
+    (void)snprintf(tagline, sizeof(tagline), "a tiny terminal cat%s", dots[(frame / 12ULL) % 4ULL]);
+    int color_on = cfg->colors && !cfg->ascii;
+    if (color_on) attron(COLOR_PAIR(CKCLR_GRAY));
+    draw_centered_text(1, width, tagline);
+    if (color_on) attroff(COLOR_PAIR(CKCLR_GRAY));
+}
+
+static void draw_ambient(int width, int height, const Config* cfg, uint32_t seed, uint64_t frame) {
+    if (!cfg || width < 34 || height < 12) return;
+    int color_on = cfg->colors && !cfg->ascii;
+    int x_span = width - 12;
+    int y_span = height - 10;
+    uint32_t tick = (uint32_t)(frame / 10ULL);
+
+    for (uint32_t i = 0; i < 5U; i++) {
+        uint32_t value = seed ^ (0x9e3779b9U * (i + 1U)) ^ (tick * (0x45d9f3bU + i));
+        value ^= value >> 16;
+        int x = 6 + (int)(value % (uint32_t)x_span);
+        int y = 4 + (int)((value >> 8) % (uint32_t)y_span);
+        int phase = (int)((tick + i * 3U) % 7U);
+        if (phase == 0 || phase == 1) {
+            if (color_on) attron(COLOR_PAIR(CKCLR_ACCENT));
+            (void)mvaddch(y, x, phase == 0 ? '*' : '+');
+            if (color_on) attroff(COLOR_PAIR(CKCLR_ACCENT));
+        } else {
+            if (color_on) attron(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
+            else attron(A_DIM);
+            (void)mvaddch(y, x, '.');
+            if (color_on) attroff(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
+            else attroff(A_DIM);
+        }
+    }
+}
+
+static void draw_compact_notice(int width, int height, const Config* cfg) {
+    if (!cfg || width <= 0 || height <= 0) return;
+    int color_on = cfg->colors && !cfg->ascii;
+    if (color_on) attron(COLOR_PAIR(CKCLR_ACCENT) | A_BOLD);
+    else attron(A_BOLD);
+    draw_centered_text(height / 2, width, "make room for kitty");
+    if (color_on) attroff(COLOR_PAIR(CKCLR_ACCENT) | A_BOLD);
+    else attroff(A_BOLD);
+    if (height / 2 + 1 < height) draw_centered_text(height / 2 + 1, width, "resize to continue");
 }
 
 static void pick_anchor(int width, int height, int randomize, ckitty_rng* rng, int* out_cx, int* out_cy) {
@@ -621,41 +675,45 @@ int main(int argc, char* argv[]) {
 
         erase();
         draw_topbar(width, &cfg, &kitty, seed);
-        draw_stage_frame(width, height, &cfg);
-        draw_ground(width, height, &cfg);
+        draw_tagline(width, height, &cfg, cfg.message, frame);
 
-        const ckitty_canvas* to_draw = &canvas;
-        if (cfg.live && !grown) {
-            int step = order.len / 80 + 1;
-            live_visible += step;
-            if (live_visible >= order.len) {
-                live_visible = order.len;
-                grown = 1;
-            }
-            ckitty_canvas_copy_visible(&live_full, &order, live_visible, &live_visible_canvas);
-            to_draw = &live_visible_canvas;
+        int compact = width < 34 || height < 12;
+        if (compact) {
+            draw_compact_notice(width, height, &cfg);
         } else {
-            if (kitty.pose == CKPOSE_WALK && frame % 3ULL == 0) {
-                int min_cx = 12;
-                int max_cx = width - 13;
-                if (max_cx < min_cx) min_cx = max_cx = width / 2;
-                kitty.cx += kitty.facing;
-                if (kitty.cx <= min_cx) {
-                    kitty.cx = min_cx;
-                    kitty.facing = 1;
-                } else if (kitty.cx >= max_cx) {
-                    kitty.cx = max_cx;
-                    kitty.facing = -1;
-                }
-            }
-            ckitty_render_frame(&kitty, frame, &canvas);
-            to_draw = &canvas;
-        }
+            draw_stage_frame(width, height, &cfg);
+            draw_ground(width, height, &cfg);
+            draw_ambient(width, height, &cfg, seed, frame);
 
-        draw_canvas_to_curses(to_draw, &cfg, frame);
-        if (height > 1) {
-            if (cfg.message) draw_centered_text(1, width, cfg.message);
-            else draw_centered_text(1, width, "a tiny terminal cat");
+            const ckitty_canvas* to_draw = &canvas;
+            if (cfg.live && !grown) {
+                int step = order.len / 80 + 1;
+                live_visible += step;
+                if (live_visible >= order.len) {
+                    live_visible = order.len;
+                    grown = 1;
+                }
+                ckitty_canvas_copy_visible(&live_full, &order, live_visible, &live_visible_canvas);
+                to_draw = &live_visible_canvas;
+            } else {
+                if (kitty.pose == CKPOSE_WALK && frame % 3ULL == 0) {
+                    int min_cx = 12;
+                    int max_cx = width - 13;
+                    if (max_cx < min_cx) min_cx = max_cx = width / 2;
+                    kitty.cx += kitty.facing;
+                    if (kitty.cx <= min_cx) {
+                        kitty.cx = min_cx;
+                        kitty.facing = 1;
+                    } else if (kitty.cx >= max_cx) {
+                        kitty.cx = max_cx;
+                        kitty.facing = -1;
+                    }
+                }
+                ckitty_render_frame(&kitty, frame, &canvas);
+                to_draw = &canvas;
+            }
+
+            draw_canvas_to_curses(to_draw, &cfg, frame);
         }
         draw_footer(width, height, &cfg, &kitty, seed);
         refresh();

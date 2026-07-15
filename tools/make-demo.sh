@@ -64,7 +64,7 @@ make_frame 06 walk 8
 
 # Assemble with FFmpeg's palette pipeline so every frame remains a complete
 # terminal window instead of becoming a viewer-dependent transparent delta.
-ffmpeg -loglevel error -y -framerate 10 -i "$tmp/frame-%02d.png" \
-    -vf 'fps=10,split[s0][s1];[s0]palettegen=max_colors=256:reserve_transparent=0[p];[s1][p]paletteuse=dither=sierra2_4a' \
+ffmpeg -loglevel error -y -framerate 2 -i "$tmp/frame-%02d.png" \
+    -vf 'fps=2,split[s0][s1];[s0]palettegen=max_colors=256:reserve_transparent=0[p];[s1][p]paletteuse=dither=sierra2_4a' \
     -loop 0 "$out"
 echo "wrote $out"

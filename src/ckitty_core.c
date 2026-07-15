@@ -447,11 +447,11 @@ static void render_playing(const ckitty_kitty* k, uint64_t frame, ckitty_canvas*
 
     // Excited tail behind.
     int tail_base_x = (dir > 0) ? body_left - 1 : body_right + 1;
-    int tail_base_y = cy + 1;
+    int tail_base_y = cy + 3;
     render_tail(k, frame, c, tail_base_x, tail_base_y, -dir);
 
     // Head at the front.
-    int head_x0 = (dir > 0) ? (body_right + 3) : (body_left - 10);
+    int head_x0 = (dir > 0) ? (body_right - 3) : (body_left - 3);
     int head_y0 = cy - 2;
     render_head(k, frame, c, head_x0, head_y0);
 

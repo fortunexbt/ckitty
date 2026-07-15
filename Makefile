@@ -27,7 +27,7 @@ endif
 CFLAGS += $(SANITIZE)
 LDFLAGS += $(SANITIZE)
 
-.PHONY: all check test test-cli sanitize demo install uninstall clean
+.PHONY: all check test test-cli test-resize sanitize demo install uninstall clean
 
 all: $(APP)
 
@@ -50,7 +50,10 @@ test: $(TEST)
 test-cli: $(APP)
 	$(TESTDIR)/test_cli.sh ./$(APP)
 
-check: all test test-cli
+check: all test test-cli test-resize
+
+test-resize: $(APP)
+	python3 tests/test_resize.py ./$(APP)
 
 demo: all
 	./tools/make-demo.sh
