@@ -27,7 +27,7 @@ endif
 CFLAGS += $(SANITIZE)
 LDFLAGS += $(SANITIZE)
 
-.PHONY: all check test test-cli sanitize install uninstall clean
+.PHONY: all check test test-cli sanitize demo install uninstall clean
 
 all: $(APP)
 
@@ -51,6 +51,9 @@ test-cli: $(APP)
 	$(TESTDIR)/test_cli.sh ./$(APP)
 
 check: all test test-cli
+
+demo: all
+	./tools/make-demo.sh
 
 sanitize:
 	$(MAKE) clean

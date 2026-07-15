@@ -13,13 +13,16 @@ It blinks, wiggles its tail, changes pose, and occasionally brings a toy. It is 
 - Color is automatic when the terminal supports it; `--ascii` or `NO_COLOR=1` keeps output plain and accessible.
 - Safe clipping and redraw on small or resized terminals.
 
+![ckitty banner](assets/ckitty-banner.svg)
+
+![ckitty terminal demo](assets/ckitty-demo.gif)
+
 ## A frame (seed 123)
 
 ```text
     /\_/\
 -- ( o.o )--
  -- > 3 < --
-.-~~~~~~~~~-.       \\~~~~~~~
 .-~~~~~~~~~-.       \~~~~~~~
 |o:ooooo    |      \~
 \___________//~~~~~~
@@ -53,6 +56,7 @@ Requirements: a C11 compiler, ncurses, and libm.
 make
 make check              # build, core tests, CLI/error tests
 make sanitize           # AddressSanitizer + UndefinedBehaviorSanitizer
+make demo               # regenerate the README terminal GIF (needs ImageMagick + FFmpeg)
 ```
 
 On macOS, Homebrew ncurses is detected automatically when installed:
