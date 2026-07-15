@@ -1,29 +1,70 @@
-CC = cc
-CFLAGS = -Wall -pedantic
-LDFLAGS = -lncurses
-LDFLAGS_V3 = -lncurses -lm
+CC ?= cc
+CPPFLAGS ?=
+CFLAGS ?= -Wall -Wextra -Wpedantic -Wconversion -std=c11
+LDFLAGS ?=
+LDLIBS ?= -lncurses -lm
+PREFIX ?= /usr/local
+
+APP = ckitty
+TEST = ckitty_test
 SRCDIR = src
-TARGETS = ckitty ckitty_v2 ckitty_v3
-PREFIX = /usr/local
+TESTDIR = tests
 
-all: $(TARGETS)
+APP_OBJS = $(SRCDIR)/ckitty.o $(SRCDIR)/ckitty_core.o
+TEST_OBJS = $(TESTDIR)/test_ckitty_core.o $(SRCDIR)/ckitty_core.o
+SANITIZER_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer
 
-ckitty: $(SRCDIR)/ckitty.c
-	$(CC) $(CFLAGS) $< $(LDFLAGS) -o $@
+# Homebrew keeps ncurses keg-only on macOS. Auto-detect it when available,
+# while still allowing packagers to override CPPFLAGS/LDFLAGS explicitly.
+ifeq ($(shell uname -s),Darwin)
+NCURSES_PREFIX ?= $(shell brew --prefix ncurses 2>/dev/null)
+ifneq ($(strip $(NCURSES_PREFIX)),)
+CPPFLAGS += -I$(NCURSES_PREFIX)/include
+LDFLAGS += -L$(NCURSES_PREFIX)/lib
+endif
+endif
 
-ckitty_v2: $(SRCDIR)/ckitty_v2.c
-	$(CC) $(CFLAGS) $< $(LDFLAGS) -o $@
+CFLAGS += $(SANITIZE)
+LDFLAGS += $(SANITIZE)
 
-ckitty_v3: $(SRCDIR)/ckitty_v3.c
-	$(CC) $(CFLAGS) $< $(LDFLAGS_V3) -o $@
+.PHONY: all check test test-cli sanitize demo install uninstall clean
 
-install: ckitty_v3
-	install -Dm755 ckitty_v3 $(PREFIX)/bin/ckitty
+all: $(APP)
+
+$(APP): $(APP_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+$(TEST): $(TEST_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^ -lm
+
+$(SRCDIR)/ckitty.o: $(SRCDIR)/ckitty.c $(SRCDIR)/ckitty_core.h
+$(SRCDIR)/ckitty_core.o: $(SRCDIR)/ckitty_core.c $(SRCDIR)/ckitty_core.h
+$(TESTDIR)/test_ckitty_core.o: $(TESTDIR)/test_ckitty_core.c $(SRCDIR)/ckitty_core.h
+
+%.o:
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+test: $(TEST)
+	./$(TEST)
+
+test-cli: $(APP)
+	$(TESTDIR)/test_cli.sh ./$(APP)
+
+check: all test test-cli
+
+demo: all
+	./tools/make-demo.sh
+
+sanitize:
+	$(MAKE) clean
+	$(MAKE) SANITIZE="$(SANITIZER_FLAGS)" check
+
+install: $(APP)
+	install -d "$(PREFIX)/bin"
+	install -m 755 $(APP) "$(PREFIX)/bin/ckitty"
 
 uninstall:
-	rm -f $(PREFIX)/bin/ckitty
+	rm -f "$(PREFIX)/bin/ckitty"
 
 clean:
-	rm -f $(TARGETS)
-
-.PHONY: all install uninstall clean
+	rm -f $(APP) $(TEST) $(APP_OBJS) $(TEST_OBJS)

@@ -1,102 +1,33 @@
 # Contributing to ckitty
 
-Thank you for your interest in contributing to ckitty! This document provides guidelines and instructions for contributing.
+Keep ckitty small, deterministic, and pleasant to run. Changes should fit the single-binary architecture: terminal concerns belong in `src/ckitty.c`; procedural generation and canvas operations belong in `src/ckitty_core.c`/`.h` and must not depend on ncurses.
 
-## Code of Conduct
+## Development
 
-- Be respectful and inclusive
-- Welcome newcomers and help them get started
-- Focus on constructive criticism
+Install a compiler and ncurses, then run:
 
-## How to Contribute
-
-### Reporting Bugs
-
-1. Check if the bug has already been reported in [Issues](https://github.com/yourusername/ckitty/issues)
-2. If not, create a new issue with:
-   - Clear title and description
-   - Steps to reproduce
-   - Expected vs actual behavior
-   - System information (OS, terminal, ncurses version)
-
-### Suggesting Features
-
-1. Check existing issues for similar suggestions
-2. Create a new issue with the `enhancement` label
-3. Describe the feature and its use case
-4. Include ASCII art mockups if relevant!
-
-### Code Contributions
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-kitty`)
-3. Make your changes
-4. Run tests and ensure compilation works
-5. Commit with clear messages
-6. Push to your fork
-7. Create a Pull Request
-
-### Coding Standards
-
-- Follow the existing C style in the codebase
-- Use meaningful variable names
-- Comment complex algorithms
-- Keep functions focused and small
-- Test on multiple terminals if possible
-
-### ASCII Art Guidelines
-
-When creating new kitty poses or animations:
-- Keep within 80 column width
-- Test with and without colors
-- Ensure it looks good in different terminal sizes
-- Make it recognizable as a cat!
-
-## Development Setup
-
-```bash
-# Clone the repo
-git clone https://github.com/yourusername/ckitty.git
-cd ckitty
-
-# Install dependencies (macOS)
-brew install ncurses
-
-# Install dependencies (Ubuntu/Debian)
-sudo apt-get install libncurses5-dev
-
-# Build
-make
-
-# Test
-./ckitty_v3 -c
+```sh
+make check
+make sanitize
 ```
 
-## Testing
+`make check` includes the dependency-free rendering tests and CLI/error tests. Headless rendering is available with `./ckitty --dump --seed 123 --pose sit --frame 0`, so terminal interaction is not required for most changes.
 
-Before submitting:
-1. Test all command line options
-2. Test in different terminal emulators
-3. Test with/without color support
-4. Verify no memory leaks with valgrind (if available)
+## Code and rendering guidelines
 
-## Pull Request Process
+- Use the existing C11 style and compile without warnings.
+- Keep seeded output deterministic. Any random choice must come from `ckitty_rng`, not `rand()` or process-global state.
+- Clip through the canvas API; never write directly outside a canvas.
+- Preserve a useful plain-ASCII fallback and test small canvases.
+- Keep animation state stable per kitty so environmental details do not flicker.
+- Add or update tests when changing rendering, parsing, or lifecycle behavior.
 
-1. Update README.md if adding new features
-2. Add comments for new algorithms
-3. Ensure all tests pass
-4. Update version numbers if applicable
-5. PR will be merged after review
+New poses should remain recognizable at roughly 80 columns and should have sensible behavior on a small terminal. Avoid adding dependencies for a visual effect that can be expressed with the current canvas primitives.
 
-## Adding New Features
+## Pull requests
 
-Popular requests:
-- New kitty poses (stretching, grooming, hunting)
-- More environmental elements
-- Different cat breeds
-- Sound effects (purring via terminal bell?)
-- Network multiplayer kitties
+Describe the user-visible behavior, include the seed/pose/frame for rendering changes, and report the commands used for verification. Do not commit generated binaries or local terminal captures. Update `README.md` or `EXAMPLES.md` when adding a supported option.
 
-## Questions?
+## Reporting bugs
 
-Feel free to open an issue for any questions about contributing!
+Include the operating system, compiler, ncurses version if relevant, terminal size, command line, seed, and whether `--dump` reproduces the issue. For memory-safety issues, include the output of `make sanitize`.

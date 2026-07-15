@@ -1,148 +1,47 @@
-# ckitty Examples Gallery
+# ckitty, casually
 
-A collection of example commands and their expected outputs.
+All examples use the one supported binary, `ckitty`. Run `make` first or replace `ckitty` with `./ckitty` while working from the repository.
 
-## Basic Examples
+## Interactive
 
-### Simple Kitty
-```bash
-./ckitty_v3
-```
-Generates a random kitty without colors in a random pose.
-
-### Colorful Kitty
-```bash
-./ckitty_v3 -c
-```
-Same as above but with colors enabled.
-
-### Live Generation Mode
-```bash
-./ckitty_v3 -l -c
-```
-Watch the kitty being drawn piece by piece, similar to cbonsai's branch growth.
-
-## Advanced Examples
-
-### Specific Poses
-
-#### Sitting Kitty
-```
-     /\_/\
-    ( o.o )     A content kitty sitting upright
-     > ^ <      with alert whiskers
-    (  *  )
-    |  *  |
-    (_)(_)
+```sh
+ckitty                         # automatic color, random kitty, endless animation
+ckitty play                    # start in a playful pose
+ckitty --ascii                 # accessibility-friendly plain output
+NO_COLOR=1 ckitty              # same fallback through the standard convention
+ckitty -l                      # reveal the kitty piece by piece
+ckitty -S -m "back soon"       # screensaver with a message
 ```
 
-#### Sleeping Kitty
-```
-    zzZ
-   (^.^)      Curled up and dreaming
-  (     )     with occasional z's floating up
-  (_____) 
-```
+Press `q` or Escape to quit, Space to cycle poses, and `n` to create a new kitty.
 
-#### Playing Kitty
-```
-      /\_/\
-     ( o.o )  \     Pouncing position with
-      > ^ </   \    raised paws and excited tail
-    =======     @   Often appears with yarn ball
-    /     \    @@@
+## Reproducible frames
+
+```sh
+ckitty --dump --seed 42 sit --frame 0
+ckitty --dump --seed 42 sleep --frame 20
+ckitty --dump --seed 42 play --frame 0
+ckitty --dump --seed 42 walk --frame 12
 ```
 
-## Seed Examples
+The same seed, pose, frame, width, and height produce the same output. This makes it easy to save a frame or compare renderer changes:
 
-### Memorable Seeds
-
-```bash
-# Fat fluffy kitty
-./ckitty_v3 -c -s 42
-
-# Thin elegant kitty
-./ckitty_v3 -c -s 1337
-
-# Hyperactive playing kitty
-./ckitty_v3 -c -s 9999
-
-# Always sleeping kitty
-./ckitty_v3 -c -s 2024
+```sh
+ckitty --dump --seed 123 sit --frame 0 > kitty.txt
+ckitty --dump --seed 123 sit --frame 0 | diff -u kitty.txt -
 ```
 
-## Animation Examples
+## Animation tuning
 
-### Rainbow Mode
-```bash
-./ckitty_v3 -r
-```
-Kitty cycles through all available colors.
-
-### Slow Motion
-```bash
-./ckitty_v3 -c -d 100000
-```
-Slower animations for a relaxed viewing experience.
-
-### Fast Motion
-```bash
-./ckitty_v3 -c -d 10000
-```
-Hyperactive kitty with rapid animations.
-
-## Screensaver Mode
-
-### Basic Screensaver
-```bash
-./ckitty_v3 -S -c
-```
-Generates new kitties continuously at random positions.
-
-### Screensaver with Custom Message
-```bash
-./ckitty_v3 -S -c -m "Gone fishing, back soon!"
+```sh
+ckitty -d 80000                # relaxed pace
+ckitty -r -d 20000             # colorful, fast rainbow
+ckitty -l -g 90000             # slower reveal
+ckitty -S -s 2024 sleep         # screensaver with a fixed pose
 ```
 
-## Environmental Elements
+Delays are microseconds and are clamped to a safe 1 ms minimum. `--dump` is the recommended mode for CI and does not require a terminal.
 
-Kitties can appear with various objects:
+## Terminal behavior
 
-- **Yarn Ball**: Pink ball of yarn with trailing string
-- **Mouse**: Small gray mouse (appears during play)
-- **Birds**: Flying overhead (random chance)
-
-## Terminal Compatibility
-
-### For Best Results
-
-1. **Terminal Size**: Minimum 80x24 recommended
-2. **Color Support**: 256 colors preferred
-3. **Font**: Monospace font required
-
-### Tested Terminals
-
-- **iTerm2** (macOS) - Excellent
-- **Terminal.app** (macOS) - Good
-- **gnome-terminal** (Linux) - Excellent
-- **xterm** (Linux) - Good
-- **Windows Terminal** (Windows) - Good
-- **PuTTY** (Windows) - Basic
-
-## Fun Combinations
-
-### Party Mode
-```bash
-./ckitty_v3 -r -d 20000 -S
-```
-
-### Zen Mode
-```bash
-./ckitty_v3 -c -s 2024 -d 80000
-```
-
-### Debug Mode
-```bash
-./ckitty_v3 -c -s 12345
-```
-Always generates the same kitty for testing.
+The app redraws its canvas after terminal resize and clips art at the available edges. Color is automatic when supported; plain ASCII remains the fallback for terminals without color support or when `--ascii`/`NO_COLOR` is used. A terminal around 80×24 gives the most room for environmental details, but smaller sizes are supported.
