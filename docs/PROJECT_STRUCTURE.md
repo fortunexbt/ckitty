@@ -9,6 +9,11 @@ ckitty/
 ├── .gitignore            # Git ignore rules
 ├── CONTRIBUTING.md        # Contribution guidelines
 ├── EXAMPLES.md            # Usage examples and gallery
+├── assets/
+│   ├── ckitty-banner.svg  # README header artwork
+│   └── ckitty-demo.gif    # Generated terminal pose gallery
+├── tools/
+│   └── make-demo.sh       # Rebuilds the README GIF from real dump frames
 ├── .github/
 │   └── workflows/
 │       └── build.yml     # CI/CD pipeline
@@ -34,7 +39,7 @@ ckitty/
 
 ### Build System
 
-- **Makefile**: Builds the single `ckitty` binary, runs tests/sanitizers, and installs/uninstalls
+- **Makefile**: Builds the single `ckitty` binary, runs tests/sanitizers, creates the demo, and installs/uninstalls
 - **install.sh**: Runs verification and installs to an explicit prefix without invoking sudo
 
 ### Documentation
@@ -42,6 +47,7 @@ ckitty/
 - **README.md**: Main project documentation with features, installation, and usage
 - **CONTRIBUTING.md**: Guidelines for contributors
 - **EXAMPLES.md**: Usage examples and gallery
+- **assets/**: Checked-in README artwork; regenerate the GIF with `make demo`
 - **LICENSE**: GPL-3.0 license text
 
 ### CI/CD

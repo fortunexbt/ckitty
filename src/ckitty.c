@@ -174,12 +174,74 @@ static void draw_canvas_to_curses(const ckitty_canvas* canvas, const Config* cfg
     }
 }
 
-static void draw_ground(int width, int height) {
-    int y = height - 4;
-    if (width <= 0 || height <= 0 || y < 0 || y >= height) return;
-    for (int x = 0; x < width; x++) {
-        if (x % 4 == 0) (void)mvaddch(y, x, '_');
+static const char* pose_name(ckitty_pose pose) {
+    switch (pose) {
+        case CKPOSE_SIT:
+            return "sit";
+        case CKPOSE_SLEEP:
+            return "sleep";
+        case CKPOSE_PLAY:
+            return "play";
+        case CKPOSE_WALK:
+        default:
+            return "walk";
     }
+}
+
+static void draw_stage_frame(int width, int height, const Config* cfg) {
+    if (!cfg || width < 12 || height < 8) return;
+
+    int left = 2;
+    int right = width - 3;
+    int top = 2;
+    int bottom = height - 3;
+    int color_on = cfg->colors && !cfg->ascii;
+    if (color_on) attron(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
+
+    (void)mvaddch(top, left, '+');
+    (void)mvaddch(top, right, '+');
+    (void)mvaddch(bottom, left, '+');
+    (void)mvaddch(bottom, right, '+');
+    for (int x = left + 1; x < right; x++) {
+        (void)mvaddch(top, x, '-');
+        (void)mvaddch(bottom, x, '-');
+    }
+    for (int y = top + 1; y < bottom; y++) {
+        (void)mvaddch(y, left, '|');
+        (void)mvaddch(y, right, '|');
+    }
+
+    if (color_on) attroff(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
+}
+
+static void draw_topbar(int width, const Config* cfg, const ckitty_kitty* kitty, uint32_t seed) {
+    if (!cfg || !kitty || width <= 0) return;
+    int color_on = cfg->colors && !cfg->ascii;
+    char meta[96];
+    (void)snprintf(meta, sizeof(meta), " %s | seed %u ", pose_name(kitty->pose), (unsigned)seed);
+    size_t meta_len = strlen(meta);
+
+    if (color_on) attron(COLOR_PAIR(CKCLR_ACCENT) | A_BOLD);
+    else attron(A_BOLD);
+    (void)mvhline(0, 0, ' ', width);
+    (void)mvaddnstr(0, 2, " ckitty ", width - 4);
+    if (meta_len < (size_t)width - 14U) {
+        int meta_x = width - (int)meta_len - 2;
+        (void)mvaddnstr(0, meta_x, meta, (int)meta_len);
+    }
+    if (color_on) attroff(COLOR_PAIR(CKCLR_ACCENT) | A_BOLD);
+    else attroff(A_BOLD);
+}
+
+static void draw_ground(int width, int height, const Config* cfg) {
+    int y = height - 5;
+    if (!cfg || width < 12 || height <= 0 || y < 0 || y >= height) return;
+    int color_on = cfg->colors && !cfg->ascii;
+    if (color_on) attron(COLOR_PAIR(CKCLR_GROUND) | A_DIM);
+    for (int x = 4; x < width - 4; x++) {
+        if ((x - 4) % 3 == 0) (void)mvaddch(y, x, '.');
+    }
+    if (color_on) attroff(COLOR_PAIR(CKCLR_GROUND) | A_DIM);
 }
 
 static void draw_centered_text(int y, int width, const char* text) {
@@ -191,11 +253,24 @@ static void draw_centered_text(int y, int width, const char* text) {
     (void)mvaddnstr(y, x, text, visible);
 }
 
-static void draw_status(int width, int height, uint32_t seed) {
-    if (height <= 0 || width <= 0) return;
-    char status[64];
-    (void)snprintf(status, sizeof(status), "seed %u  |  q quit", (unsigned)seed);
-    (void)mvaddnstr(height - 1, 0, status, width);
+static void draw_footer(int width, int height, const Config* cfg, const ckitty_kitty* kitty, uint32_t seed) {
+    if (!cfg || !kitty || height < 2 || width <= 0) return;
+    int color_on = cfg->colors && !cfg->ascii;
+    char left[96];
+    const char* hints = " q quit   space pose   n new kitty ";
+    (void)snprintf(left, sizeof(left), " %s | seed %u ", pose_name(kitty->pose), (unsigned)seed);
+
+    if (color_on) attron(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
+    else attron(A_DIM);
+    (void)mvhline(height - 2, 0, '-', width);
+    (void)mvaddnstr(height - 1, 0, left, width);
+    if (color_on) attroff(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
+    else attroff(A_DIM);
+
+    if (color_on) attron(COLOR_PAIR(CKCLR_ACCENT));
+    int hint_x = width - (int)strlen(hints);
+    if (hint_x > (int)strlen(left) + 2) (void)mvaddnstr(height - 1, hint_x, hints, width - hint_x);
+    if (color_on) attroff(COLOR_PAIR(CKCLR_ACCENT));
 }
 
 static void pick_anchor(int width, int height, int randomize, ckitty_rng* rng, int* out_cx, int* out_cy) {
@@ -545,7 +620,9 @@ int main(int argc, char* argv[]) {
         }
 
         erase();
-        draw_ground(width, height);
+        draw_topbar(width, &cfg, &kitty, seed);
+        draw_stage_frame(width, height, &cfg);
+        draw_ground(width, height, &cfg);
 
         const ckitty_canvas* to_draw = &canvas;
         if (cfg.live && !grown) {
@@ -576,8 +653,11 @@ int main(int argc, char* argv[]) {
         }
 
         draw_canvas_to_curses(to_draw, &cfg, frame);
-        if (cfg.message && height > 2) draw_centered_text(1, width, cfg.message);
-        draw_status(width, height, seed);
+        if (height > 1) {
+            if (cfg.message) draw_centered_text(1, width, cfg.message);
+            else draw_centered_text(1, width, "a tiny terminal cat");
+        }
+        draw_footer(width, height, &cfg, &kitty, seed);
         refresh();
 
         int input = getch();
