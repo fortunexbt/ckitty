@@ -1,277 +1,601 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <ncurses.h>
+
+#include <errno.h>
+#include <getopt.h>
+#include <limits.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
-#include <string.h>
-#include <getopt.h>
 
-#define DELAY_DEFAULT 50000
-#define MAX_FRAMES 8
+#include "ckitty_core.h"
 
-typedef struct {
-    int x;
-    int y;
-    int direction;
-    int frame;
-    int state;
-    int color_pair;
-} Kitty;
+#define CKITTY_VERSION "1.0.0"
+#define DELAY_DEFAULT_US 40000
+#define GROW_DELAY_DEFAULT_US 60000
+#define MIN_DELAY_US 1000
+#define SCREENSAVER_PERIOD_MS 8000ULL
 
 typedef struct {
-    int delay;
+    int delay_us;
+    int grow_delay_us;
+    int live;
     int colors;
-    int infinite;
+    int ascii;
     int rainbow;
+    int screensaver;
+    int infinite;
+    int has_seed;
+    uint32_t seed;
+    const char* message;
+
+    int dump;
+    int dump_w;
+    int dump_h;
+    uint64_t dump_frame;
+    int pose_override;  // -1 means random
 } Config;
 
-const char* kitty_idle[3][5] = {
-    {
-        "  /\\_/\\  ",
-        " ( o.o ) ",
-        "  > ^ <  ",
-        " /     \\ ",
-        "(_)   (_)"
-    },
-    {
-        "  /\\_/\\  ",
-        " ( -.o ) ",
-        "  > ^ <  ",
-        " /     \\ ",
-        "(_)   (_)"
-    },
-    {
-        "  /\\_/\\  ",
-        " ( o.- ) ",
-        "  > ^ <  ",
-        " /     \\ ",
-        "(_)   (_)"
+static uint64_t now_ms(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+        return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
     }
-};
 
-const char* kitty_walk_right[2][5] = {
-    {
-        "  /\\_/\\  ",
-        " ( o.o ) ",
-        "  > ^ <  ",
-        " /  |  \\ ",
-        "(o)   (o)"
-    },
-    {
-        "  /\\_/\\  ",
-        " ( o.o ) ",
-        "  > ^ <  ",
-        " /  |  \\ ",
-        "  (o)(o) "
-    }
-};
-
-const char* kitty_walk_left[2][5] = {
-    {
-        "  /\\_/\\  ",
-        " ( o.o ) ",
-        "  > ^ <  ",
-        " /  |  \\ ",
-        "(o)   (o)"
-    },
-    {
-        "  /\\_/\\  ",
-        " ( o.o ) ",
-        "  > ^ <  ",
-        " /  |  \\ ",
-        " (o)(o)  "
-    }
-};
-
-const char* kitty_sleep[2][5] = {
-    {
-        "  /\\_/\\  ",
-        " ( -.-)  ",
-        "  > ^ <  ",
-        " /     \\ ",
-        "(_)   (_)"
-    },
-    {
-        "  /\\_/\\  ",
-        " ( -.-) z",
-        "  > ^ <  ",
-        " /     \\ ",
-        "(_)   (_)"
-    }
-};
-
-void init_colors(void) {
-    start_color();
-    init_pair(1, COLOR_WHITE, COLOR_BLACK);
-    init_pair(2, COLOR_YELLOW, COLOR_BLACK);
-    init_pair(3, COLOR_CYAN, COLOR_BLACK);
-    init_pair(4, COLOR_GREEN, COLOR_BLACK);
-    init_pair(5, COLOR_MAGENTA, COLOR_BLACK);
-    init_pair(6, COLOR_RED, COLOR_BLACK);
-    init_pair(7, COLOR_BLUE, COLOR_BLACK);
+    // Keep startup usable on older libc implementations without a monotonic
+    // clock. This path is only a fallback; animation remains best-effort.
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000ULL + (uint64_t)tv.tv_usec / 1000ULL;
 }
 
-void draw_kitty(Kitty* kitty, const char* frame[5]) {
-    attron(COLOR_PAIR(kitty->color_pair));
-    for (int i = 0; i < 5; i++) {
-        mvprintw(kitty->y + i, kitty->x, "%s", frame[i]);
+static void sleep_us(int delay_us) {
+    struct timespec requested;
+    requested.tv_sec = delay_us / 1000000;
+    requested.tv_nsec = (long)(delay_us % 1000000) * 1000L;
+    while (nanosleep(&requested, &requested) != 0 && errno == EINTR) {
+        /* Resume after an interrupt. */
     }
-    attroff(COLOR_PAIR(kitty->color_pair));
 }
 
-void update_kitty(Kitty* kitty, int max_x, int max_y, Config* config) {
-    static int frame_counter = 0;
-    frame_counter++;
-    
-    if (frame_counter % 10 == 0) {
-        kitty->frame = (kitty->frame + 1) % 2;
-        
-        if (config->rainbow) {
-            kitty->color_pair = (rand() % 7) + 1;
+static int parse_int(const char* s, int* out) {
+    char* end = NULL;
+    errno = 0;
+    if (!s) return 0;
+    long value = strtol(s, &end, 10);
+    if (errno != 0 || end == s || *end != '\0' || value < INT_MIN || value > INT_MAX) {
+        return 0;
+    }
+    *out = (int)value;
+    return 1;
+}
+
+static int parse_u64(const char* s, uint64_t* out) {
+    char* end = NULL;
+    errno = 0;
+    if (!s || s[0] == '-') return 0;
+    unsigned long long value = strtoull(s, &end, 10);
+    if (errno != 0 || end == s || *end != '\0') return 0;
+    *out = (uint64_t)value;
+    return 1;
+}
+
+static int parse_u32(const char* s, uint32_t* out) {
+    uint64_t value = 0;
+    if (!parse_u64(s, &value) || value > UINT32_MAX) return 0;
+    *out = (uint32_t)value;
+    return 1;
+}
+
+static int parse_pose(const char* s) {
+    if (!s) return -1;
+    if (strcmp(s, "sit") == 0 || strcmp(s, "sitting") == 0) return CKPOSE_SIT;
+    if (strcmp(s, "sleep") == 0 || strcmp(s, "sleeping") == 0) return CKPOSE_SLEEP;
+    if (strcmp(s, "play") == 0 || strcmp(s, "playing") == 0) return CKPOSE_PLAY;
+    if (strcmp(s, "walk") == 0 || strcmp(s, "walking") == 0) return CKPOSE_WALK;
+    if (strcmp(s, "random") == 0) return -1;
+    return -2;
+}
+
+static void print_usage(FILE* stream) {
+    fprintf(stream, "ckitty %s - a procedural, animated terminal kitty\n\n", CKITTY_VERSION);
+    fprintf(stream, "Usage: ckitty [OPTIONS]\n\n");
+    fprintf(stream, "Options:\n");
+    fprintf(stream, "  -h, --help             Show this help message\n");
+    fprintf(stream, "  -c, --colors           Enable colors when supported\n");
+    fprintf(stream, "  -a, --ascii            Force plain ASCII output (also honors NO_COLOR)\n");
+    fprintf(stream, "  -r, --rainbow          Animate colors across the kitty\n");
+    fprintf(stream, "  -l, --live             Reveal the kitty piece by piece\n");
+    fprintf(stream, "  -S, --screensaver      Spawn a new kitty periodically\n");
+    fprintf(stream, "  -i, --infinite         Run until quit (otherwise about 24 seconds)\n");
+    fprintf(stream, "  -s, --seed <num>       Set a reproducible unsigned 32-bit seed\n");
+    fprintf(stream, "  -d, --delay <us>       Frame delay in microseconds (default: %d)\n", DELAY_DEFAULT_US);
+    fprintf(stream, "  -g, --grow-delay <us>  Live reveal delay (default: %d)\n", GROW_DELAY_DEFAULT_US);
+    fprintf(stream, "  -p, --pose <name>      sit|sleep|play|walk|random\n");
+    fprintf(stream, "  -m, --message <text>   Display a message in interactive mode\n");
+    fprintf(stream, "      --dump             Render one frame to stdout without ncurses\n");
+    fprintf(stream, "      --width <cols>     Dump canvas width (default: 80)\n");
+    fprintf(stream, "      --height <rows>    Dump canvas height (default: 24)\n");
+    fprintf(stream, "      --frame <n>        Dump frame number (default: 0)\n");
+    fprintf(stream, "      --version          Show the version\n\n");
+    fprintf(stream, "Interactive controls:\n");
+    fprintf(stream, "  q / ESC   quit     space   cycle pose     n   new kitty\n");
+    fprintf(stream, "\nDump mode is deterministic and is suitable for scripts and CI.\n");
+}
+
+static int init_colors(void) {
+    if (start_color() == ERR) return 0;
+#ifdef NCURSES_VERSION
+    use_default_colors();
+#endif
+    init_pair(CKCLR_FUR, COLOR_YELLOW, -1);
+    init_pair(CKCLR_PAW, COLOR_WHITE, -1);
+    init_pair(CKCLR_NOSE, COLOR_RED, -1);
+    init_pair(CKCLR_TOY, COLOR_MAGENTA, -1);
+    init_pair(CKCLR_ACCENT, COLOR_CYAN, -1);
+    init_pair(CKCLR_GRAY, COLOR_WHITE, -1);
+    init_pair(CKCLR_GROUND, COLOR_GREEN, -1);
+    return 1;
+}
+
+static void draw_canvas_to_curses(const ckitty_canvas* canvas, const Config* cfg, uint64_t frame) {
+    if (!canvas || !cfg) return;
+
+    for (int y = 0; y < canvas->h; y++) {
+        for (int x = 0; x < canvas->w; x++) {
+            char ch = ckitty_canvas_get(canvas, x, y);
+            if (ch == ' ') continue;
+
+            uint8_t active = ckitty_canvas_get_color(canvas, x, y);
+            int color_on = cfg->colors && !cfg->ascii;
+            if (color_on && cfg->rainbow) {
+                active = (uint8_t)(((frame / 10ULL) + (uint64_t)x + (uint64_t)y) % 7ULL + 1ULL);
+            }
+            if (color_on && active >= CKCLR_FUR && active <= CKCLR_GROUND) {
+                attron(COLOR_PAIR(active));
+            }
+
+            (void)mvaddch(y, x, (chtype)(unsigned char)ch);
+
+            if (color_on && active >= CKCLR_FUR && active <= CKCLR_GROUND) {
+                attroff(COLOR_PAIR(active));
+            }
         }
     }
-    
-    if (rand() % 100 < 5) {
-        kitty->state = rand() % 4;
-    }
-    
-    switch (kitty->state) {
-        case 1:
-            if (kitty->x < max_x - 12) {
-                kitty->x++;
-                kitty->direction = 1;
-            }
-            break;
-        case 2:
-            if (kitty->x > 1) {
-                kitty->x--;
-                kitty->direction = -1;
-            }
-            break;
-        case 3:
-            break;
-        default:
-            break;
+}
+
+static void draw_ground(int width, int height) {
+    int y = height - 4;
+    if (width <= 0 || height <= 0 || y < 0 || y >= height) return;
+    for (int x = 0; x < width; x++) {
+        if (x % 4 == 0) (void)mvaddch(y, x, '_');
     }
 }
 
-void print_usage(void) {
-    printf("ckitty - Terminal kitty generator\n\n");
-    printf("Usage: ckitty [OPTIONS]\n\n");
-    printf("OPTIONS:\n");
-    printf("  -h, --help          Show this help message\n");
-    printf("  -d, --delay <ms>    Set animation delay in microseconds (default: 50000)\n");
-    printf("  -c, --colors        Enable colors\n");
-    printf("  -r, --rainbow       Enable rainbow mode\n");
-    printf("  -i, --infinite      Run indefinitely\n");
+static void draw_centered_text(int y, int width, const char* text) {
+    if (y < 0 || y >= LINES || width <= 0 || !text) return;
+    size_t length = strlen(text);
+    if (length > (size_t)INT_MAX) length = INT_MAX;
+    int visible = (length > (size_t)width) ? width : (int)length;
+    int x = (width - visible) / 2;
+    (void)mvaddnstr(y, x, text, visible);
 }
 
-int main(int argc, char *argv[]) {
-    Config config = {
-        .delay = DELAY_DEFAULT,
+static void draw_status(int width, int height, uint32_t seed) {
+    if (height <= 0 || width <= 0) return;
+    char status[64];
+    (void)snprintf(status, sizeof(status), "seed %u  |  q quit", (unsigned)seed);
+    (void)mvaddnstr(height - 1, 0, status, width);
+}
+
+static void pick_anchor(int width, int height, int randomize, ckitty_rng* rng, int* out_cx, int* out_cy) {
+    int cx = width / 2;
+    int cy = height / 2;
+    if (randomize && rng) {
+        int cx_min = 12;
+        int cx_max = width - 13;
+        int cy_min = 6;
+        int cy_max = height - 9;
+        if (cx_max < cx_min) cx_min = cx_max = width / 2;
+        if (cy_max < cy_min) cy_min = cy_max = height / 2;
+        cx = cx_min + ckitty_rng_range(rng, cx_max - cx_min + 1);
+        cy = cy_min + ckitty_rng_range(rng, cy_max - cy_min + 1);
+    }
+    *out_cx = cx;
+    *out_cy = cy;
+}
+
+static int prepare_live(const ckitty_kitty* kitty, ckitty_canvas* full, ckitty_draw_order* order) {
+    if (!kitty || !full || !order) return 0;
+    ckitty_render_frame(kitty, 0, full);
+    return ckitty_draw_order_build(full, kitty->seed, order);
+}
+
+static int resize_canvas(ckitty_canvas* canvas, int width, int height) {
+    ckitty_canvas replacement = {0};
+    if (!canvas || !ckitty_canvas_init(&replacement, width, height)) return 0;
+    ckitty_canvas_free(canvas);
+    *canvas = replacement;
+    return 1;
+}
+
+static int resize_live_canvases(ckitty_canvas* full, ckitty_canvas* visible, int width, int height) {
+    ckitty_canvas new_full = {0};
+    ckitty_canvas new_visible = {0};
+    if (!full || !visible || !ckitty_canvas_init(&new_full, width, height) ||
+        !ckitty_canvas_init(&new_visible, width, height)) {
+        ckitty_canvas_free(&new_full);
+        ckitty_canvas_free(&new_visible);
+        return 0;
+    }
+    ckitty_canvas_free(full);
+    ckitty_canvas_free(visible);
+    *full = new_full;
+    *visible = new_visible;
+    return 1;
+}
+
+static int rebuild_live(const ckitty_kitty* kitty, ckitty_canvas* full, ckitty_draw_order* order,
+                        int* visible, int* grown) {
+    if (!kitty || !full || !order || !visible || !grown) return 0;
+    ckitty_draw_order_free(order);
+    if (!prepare_live(kitty, full, order)) return 0;
+    *visible = 0;
+    *grown = 0;
+    return 1;
+}
+
+static void choose_kitty(ckitty_kitty* kitty, ckitty_rng* rng, int width, int height,
+                         int randomize, int pose_override) {
+    int cx = 0;
+    int cy = 0;
+    pick_anchor(width, height, randomize, rng, &cx, &cy);
+    ckitty_kitty_randomize(kitty, rng, cx, cy);
+    if (pose_override >= 0) kitty->pose = (ckitty_pose)pose_override;
+}
+
+int main(int argc, char* argv[]) {
+    Config cfg = {
+        .delay_us = DELAY_DEFAULT_US,
+        .grow_delay_us = GROW_DELAY_DEFAULT_US,
+        .live = 0,
         .colors = 0,
+        .ascii = getenv("NO_COLOR") != NULL,
+        .rainbow = 0,
+        .screensaver = 0,
         .infinite = 0,
-        .rainbow = 0
+        .has_seed = 0,
+        .seed = 0,
+        .message = NULL,
+        .dump = 0,
+        .dump_w = 80,
+        .dump_h = 24,
+        .dump_frame = 0,
+        .pose_override = -1
     };
-    
-    static struct option long_options[] = {
+
+    enum {
+        OPT_DUMP = 1000,
+        OPT_WIDTH,
+        OPT_HEIGHT,
+        OPT_FRAME,
+        OPT_VERSION
+    };
+    static const struct option long_opts[] = {
         {"help", no_argument, 0, 'h'},
-        {"delay", required_argument, 0, 'd'},
         {"colors", no_argument, 0, 'c'},
+        {"ascii", no_argument, 0, 'a'},
         {"rainbow", no_argument, 0, 'r'},
+        {"live", no_argument, 0, 'l'},
+        {"screensaver", no_argument, 0, 'S'},
         {"infinite", no_argument, 0, 'i'},
+        {"seed", required_argument, 0, 's'},
+        {"delay", required_argument, 0, 'd'},
+        {"grow-delay", required_argument, 0, 'g'},
+        {"pose", required_argument, 0, 'p'},
+        {"message", required_argument, 0, 'm'},
+        {"dump", no_argument, 0, OPT_DUMP},
+        {"width", required_argument, 0, OPT_WIDTH},
+        {"height", required_argument, 0, OPT_HEIGHT},
+        {"frame", required_argument, 0, OPT_FRAME},
+        {"version", no_argument, 0, OPT_VERSION},
         {0, 0, 0, 0}
     };
-    
+
+    opterr = 0;
     int opt;
-    while ((opt = getopt_long(argc, argv, "hd:cri", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hcarlSi:s:d:g:p:m:", long_opts, NULL)) != -1) {
         switch (opt) {
             case 'h':
-                print_usage();
+                print_usage(stdout);
                 return 0;
-            case 'd':
-                config.delay = atoi(optarg);
-                break;
             case 'c':
-                config.colors = 1;
+                cfg.colors = 1;
+                break;
+            case 'a':
+                cfg.ascii = 1;
                 break;
             case 'r':
-                config.rainbow = 1;
-                config.colors = 1;
+                cfg.rainbow = 1;
+                cfg.colors = 1;
+                break;
+            case 'l':
+                cfg.live = 1;
+                break;
+            case 'S':
+                cfg.screensaver = 1;
+                cfg.infinite = 1;
                 break;
             case 'i':
-                config.infinite = 1;
+                cfg.infinite = 1;
                 break;
+            case 's':
+                if (!parse_u32(optarg, &cfg.seed)) {
+                    fprintf(stderr, "ckitty: invalid seed: %s\n", optarg ? optarg : "(missing)");
+                    return 2;
+                }
+                cfg.has_seed = 1;
+                break;
+            case 'd':
+                if (!parse_int(optarg, &cfg.delay_us) || cfg.delay_us < 0) {
+                    fprintf(stderr, "ckitty: invalid delay: %s\n", optarg ? optarg : "(missing)");
+                    return 2;
+                }
+                break;
+            case 'g':
+                if (!parse_int(optarg, &cfg.grow_delay_us) || cfg.grow_delay_us < 0) {
+                    fprintf(stderr, "ckitty: invalid grow delay: %s\n", optarg ? optarg : "(missing)");
+                    return 2;
+                }
+                break;
+            case 'p': {
+                int pose = parse_pose(optarg);
+                if (pose == -2) {
+                    fprintf(stderr, "ckitty: invalid pose: %s\n", optarg ? optarg : "(missing)");
+                    return 2;
+                }
+                cfg.pose_override = pose;
+                break;
+            }
+            case 'm':
+                cfg.message = optarg;
+                break;
+            case OPT_DUMP:
+                cfg.dump = 1;
+                break;
+            case OPT_WIDTH:
+                if (!parse_int(optarg, &cfg.dump_w) || cfg.dump_w <= 0) {
+                    fprintf(stderr, "ckitty: invalid width: %s\n", optarg ? optarg : "(missing)");
+                    return 2;
+                }
+                break;
+            case OPT_HEIGHT:
+                if (!parse_int(optarg, &cfg.dump_h) || cfg.dump_h <= 0) {
+                    fprintf(stderr, "ckitty: invalid height: %s\n", optarg ? optarg : "(missing)");
+                    return 2;
+                }
+                break;
+            case OPT_FRAME:
+                if (!parse_u64(optarg, &cfg.dump_frame)) {
+                    fprintf(stderr, "ckitty: invalid frame: %s\n", optarg ? optarg : "(missing)");
+                    return 2;
+                }
+                break;
+            case OPT_VERSION:
+                printf("ckitty %s\n", CKITTY_VERSION);
+                return 0;
+            case '?':
             default:
-                print_usage();
-                return 1;
+                fprintf(stderr, "ckitty: unknown or incomplete option\n");
+                print_usage(stderr);
+                return 2;
         }
     }
-    
-    srand(time(NULL));
-    
-    initscr();
+
+    if (optind < argc) {
+        fprintf(stderr, "ckitty: unexpected argument: %s\n", argv[optind]);
+        return 2;
+    }
+    if (cfg.delay_us < MIN_DELAY_US) cfg.delay_us = MIN_DELAY_US;
+    if (cfg.grow_delay_us < MIN_DELAY_US) cfg.grow_delay_us = MIN_DELAY_US;
+
+    uint32_t seed = cfg.has_seed ? cfg.seed : (uint32_t)time(NULL) ^ (uint32_t)getpid();
+
+    if (cfg.dump) {
+        ckitty_canvas canvas = {0};
+        if (!ckitty_canvas_init(&canvas, cfg.dump_w, cfg.dump_h)) {
+            fprintf(stderr, "ckitty: canvas is too large or could not be allocated (%dx%d)\n",
+                    cfg.dump_w, cfg.dump_h);
+            return 1;
+        }
+
+        ckitty_rng rng;
+        ckitty_rng_seed(&rng, seed);
+        ckitty_kitty kitty;
+        ckitty_kitty_randomize(&kitty, &rng, cfg.dump_w / 2, cfg.dump_h / 2);
+        if (cfg.pose_override >= 0) kitty.pose = (ckitty_pose)cfg.pose_override;
+        ckitty_render_frame(&kitty, cfg.dump_frame, &canvas);
+
+        char* output = ckitty_canvas_dump_bbox(&canvas);
+        if (!output) {
+            fprintf(stderr, "ckitty: failed to allocate dump output\n");
+            ckitty_canvas_free(&canvas);
+            return 1;
+        }
+        fputs(output, stdout);
+        free(output);
+        ckitty_canvas_free(&canvas);
+        return 0;
+    }
+
+    if (initscr() == NULL) {
+        fprintf(stderr, "ckitty: could not initialize the terminal\n");
+        return 1;
+    }
     cbreak();
     noecho();
+    keypad(stdscr, TRUE);
     curs_set(0);
     nodelay(stdscr, TRUE);
-    
-    if (has_colors() && config.colors) {
-        init_colors();
+
+    int width = 0;
+    int height = 0;
+    getmaxyx(stdscr, height, width);
+    if (width <= 0 || height <= 0) {
+        endwin();
+        fprintf(stderr, "ckitty: terminal has no usable rows or columns\n");
+        return 1;
     }
-    
-    int max_x, max_y;
-    getmaxyx(stdscr, max_y, max_x);
-    
-    Kitty kitty = {
-        .x = max_x / 2 - 5,
-        .y = max_y / 2 - 3,
-        .direction = 0,
-        .frame = 0,
-        .state = 0,
-        .color_pair = config.colors ? (rand() % 7) + 1 : 0
-    };
-    
-    int ch;
+
+    if (cfg.colors && !cfg.ascii && has_colors()) {
+        if (!init_colors()) {
+            cfg.colors = 0;
+            cfg.rainbow = 0;
+        }
+    } else {
+        cfg.colors = 0;
+        cfg.rainbow = 0;
+    }
+
+    ckitty_canvas canvas = {0};
+    ckitty_canvas live_full = {0};
+    ckitty_canvas live_visible_canvas = {0};
+    if (!ckitty_canvas_init(&canvas, width, height) ||
+        (cfg.live && !resize_live_canvases(&live_full, &live_visible_canvas, width, height))) {
+        ckitty_canvas_free(&canvas);
+        ckitty_canvas_free(&live_full);
+        ckitty_canvas_free(&live_visible_canvas);
+        endwin();
+        fprintf(stderr, "ckitty: could not allocate terminal canvas (%dx%d)\n", width, height);
+        return 1;
+    }
+
+    ckitty_rng rng;
+    ckitty_rng_seed(&rng, seed);
+    ckitty_kitty kitty;
+    choose_kitty(&kitty, &rng, width, height, cfg.screensaver, cfg.pose_override);
+
+    ckitty_draw_order order = {0};
+    int live_visible = 0;
+    int grown = cfg.live ? 0 : 1;
+    if (cfg.live && !rebuild_live(&kitty, &live_full, &order, &live_visible, &grown)) {
+        ckitty_canvas_free(&canvas);
+        ckitty_canvas_free(&live_full);
+        ckitty_canvas_free(&live_visible_canvas);
+        endwin();
+        fprintf(stderr, "ckitty: could not prepare live rendering\n");
+        return 1;
+    }
+
+    uint64_t next_spawn = now_ms() + SCREENSAVER_PERIOD_MS;
+    uint64_t frame = 0;
+    int exit_code = 0;
     int running = 1;
-    int cycles = 0;
-    
+
     while (running) {
-        clear();
-        
-        update_kitty(&kitty, max_x, max_y, &config);
-        
-        const char** current_frame = NULL;
-        if (kitty.state == 0) {
-            current_frame = kitty_idle[kitty.frame % 3];
-        } else if (kitty.state == 1) {
-            current_frame = kitty_walk_right[kitty.frame % 2];
-        } else if (kitty.state == 2) {
-            current_frame = kitty_walk_left[kitty.frame % 2];
-        } else if (kitty.state == 3) {
-            current_frame = kitty_sleep[kitty.frame % 2];
+        int new_width = 0;
+        int new_height = 0;
+        getmaxyx(stdscr, new_height, new_width);
+        if (new_width <= 0 || new_height <= 0) {
+            sleep_us(cfg.delay_us);
+            continue;
         }
-        
-        if (current_frame) {
-            draw_kitty(&kitty, current_frame);
-        }
-        
-        refresh();
-        
-        ch = getch();
-        if (ch == 'q' || ch == 27) {
-            running = 0;
-        }
-        
-        if (!config.infinite) {
-            cycles++;
-            if (cycles > 1000) {
-                running = 0;
+        if (new_width != width || new_height != height) {
+            if (!resize_canvas(&canvas, new_width, new_height) ||
+                (cfg.live && !resize_live_canvases(&live_full, &live_visible_canvas,
+                                                     new_width, new_height))) {
+                exit_code = 1;
+                break;
+            }
+            width = new_width;
+            height = new_height;
+            pick_anchor(width, height, cfg.screensaver, &rng, &kitty.cx, &kitty.cy);
+            if (cfg.live && !rebuild_live(&kitty, &live_full, &order, &live_visible, &grown)) {
+                exit_code = 1;
+                break;
             }
         }
-        
-        usleep(config.delay);
+
+        if (cfg.screensaver && now_ms() >= next_spawn) {
+            choose_kitty(&kitty, &rng, width, height, 1, cfg.pose_override);
+            frame = 0;
+            next_spawn = now_ms() + SCREENSAVER_PERIOD_MS;
+            if (cfg.live && !rebuild_live(&kitty, &live_full, &order, &live_visible, &grown)) {
+                exit_code = 1;
+                break;
+            }
+        }
+
+        erase();
+        draw_ground(width, height);
+
+        const ckitty_canvas* to_draw = &canvas;
+        if (cfg.live && !grown) {
+            int step = order.len / 80 + 1;
+            live_visible += step;
+            if (live_visible >= order.len) {
+                live_visible = order.len;
+                grown = 1;
+            }
+            ckitty_canvas_copy_visible(&live_full, &order, live_visible, &live_visible_canvas);
+            to_draw = &live_visible_canvas;
+        } else {
+            if (kitty.pose == CKPOSE_WALK && frame % 3ULL == 0) {
+                int min_cx = 12;
+                int max_cx = width - 13;
+                if (max_cx < min_cx) min_cx = max_cx = width / 2;
+                kitty.cx += kitty.facing;
+                if (kitty.cx <= min_cx) {
+                    kitty.cx = min_cx;
+                    kitty.facing = 1;
+                } else if (kitty.cx >= max_cx) {
+                    kitty.cx = max_cx;
+                    kitty.facing = -1;
+                }
+            }
+            ckitty_render_frame(&kitty, frame, &canvas);
+            to_draw = &canvas;
+        }
+
+        draw_canvas_to_curses(to_draw, &cfg, frame);
+        if (cfg.message && height > 2) draw_centered_text(1, width, cfg.message);
+        draw_status(width, height, seed);
+        refresh();
+
+        int input = getch();
+        if (input == 'q' || input == 27) {
+            running = 0;
+        } else if (input == ' ') {
+            kitty.pose = (ckitty_pose)(((int)kitty.pose + 1) % 4);
+            frame = 0;
+            if (cfg.live && !rebuild_live(&kitty, &live_full, &order, &live_visible, &grown)) {
+                exit_code = 1;
+                break;
+            }
+        } else if (input == 'n') {
+            choose_kitty(&kitty, &rng, width, height, cfg.screensaver, cfg.pose_override);
+            frame = 0;
+            next_spawn = now_ms() + SCREENSAVER_PERIOD_MS;
+            if (cfg.live && !rebuild_live(&kitty, &live_full, &order, &live_visible, &grown)) {
+                exit_code = 1;
+                break;
+            }
+        }
+
+        if (!cfg.infinite && !cfg.screensaver && frame > 600ULL) running = 0;
+        sleep_us((cfg.live && !grown) ? cfg.grow_delay_us : cfg.delay_us);
+        frame++;
     }
-    
+
+    ckitty_draw_order_free(&order);
+    ckitty_canvas_free(&canvas);
+    ckitty_canvas_free(&live_full);
+    ckitty_canvas_free(&live_visible_canvas);
     endwin();
-    return 0;
+    return exit_code;
 }

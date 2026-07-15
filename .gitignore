@@ -1,7 +1,6 @@
 # Compiled binaries
 ckitty
-ckitty_v2
-ckitty_v3
+ckitty_test
 *.o
 *.out
 *.exe

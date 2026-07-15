@@ -2,70 +2,48 @@ name: Build and Test
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libncurses5-dev libncursesw5-dev
-    
-    - name: Build all versions
-      run: make all
-    
-    - name: Run basic test
-      run: |
-        ./ckitty_v3 -h
-        timeout 5s ./ckitty_v3 -c || true
-    
-    - name: Check binary sizes
-      run: |
-        ls -la ckitty*
-        file ckitty*
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
-  build-macos:
-    runs-on: macos-latest
-    
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Install dependencies
-      run: |
-        brew install ncurses
-    
-    - name: Build all versions
-      run: make all
-    
-    - name: Run basic test
-      run: |
-        ./ckitty_v3 -h
-        timeout 5s ./ckitty_v3 -c || true
+      - uses: actions/checkout@v4
 
-  code-quality:
+      - name: Install ncurses (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libncurses-dev
+
+      - name: Install ncurses (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ncurses
+
+      - name: Build and test
+        run: make check
+
+      - name: Verify headless rendering
+        run: |
+          ./ckitty --dump --seed 123 --pose sit --frame 0 > /tmp/ckitty-frame.txt
+          test -s /tmp/ckitty-frame.txt
+          ./ckitty --version
+
+  sanitizer:
+    name: Sanitizers (Ubuntu)
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Install analysis tools
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y cppcheck clang-format
-    
-    - name: Run cppcheck
-      run: |
-        cppcheck --enable=all --error-exitcode=1 --suppress=missingIncludeSystem *.c || true
-    
-    - name: Check formatting
-      run: |
-        clang-format --version
-        # Just check, don't enforce for now
-        clang-format -n *.c || true
+      - uses: actions/checkout@v4
+      - name: Install ncurses
+        run: sudo apt-get update && sudo apt-get install -y libncurses-dev
+      - name: Run sanitizer checks
+        run: make sanitize

@@ -1,201 +1,87 @@
-# 🐱 ckitty - Terminal Kitty Generator
+# ckitty — terminal kitty generator
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![C](https://img.shields.io/badge/language-C-blue.svg)](https://en.wikipedia.org/wiki/C_(programming_language))
-[![ncurses](https://img.shields.io/badge/library-ncurses-green.svg)](https://invisible-island.net/ncurses/)
+`ckitty` is a small GPL-3.0 terminal companion inspired by [cbonsai](https://gitlab.com/jallbrit/cbonsai). It procedurally generates a kitty with a stable seed, then animates its tail, face, whiskers, pose, and surroundings.
 
-A procedurally generated terminal kitty, inspired by [cbonsai](https://gitlab.com/jallbrit/cbonsai)'s organic growth algorithms. Watch as ASCII art kitties come to life with different poses, animations, and personalities!
+## What it does
 
+- One canonical `ckitty` binary, with a dependency-free rendering core.
+- Sitting, sleeping, playing, and walking poses.
+- Deterministic seeds and headless `--dump` output for scripts and CI.
+- Live piece-by-piece reveal, screensaver spawning, optional color, and rainbow mode.
+- Plain ASCII by default; `--ascii` or `NO_COLOR=1` disables terminal colors.
+- Safe clipping and redraw on small or resized terminals.
+
+## A frame
+
+```text
+        /\_/\
+   -- ( o^O ) --
+    -- > 3 < --
+     /~~~~~~~~~\
+     |o:oooo   |       ~~~...
+     \_________/~~~~~~~
+       (_)   (_)
 ```
-      /\_/\  
-     ( o.o )      ckitty - Terminal kitties that
-      > ^ <         grow, play, and sleep!
-     /     \    
-    (_)   (_)   
-```
 
-## Features
+The exact fur, pose, tail motion, and small companions vary by seed while the silhouette stays readable.
 
-### v3 (Latest) - Procedural Generation
-- **Multiple Poses**: Sitting, sleeping, playing, and walking kitties
-- **Organic Animations**: Tail swaying, eye blinking, whisker twitching
-- **Interactive Environment**: Yarn balls, mice, and birds
-- **Advanced ASCII Art**: Curved lines, detailed features
-- **Live Generation**: Watch the kitty being drawn piece by piece
-- **Screensaver Mode**: Continuous generation of new kitties
+## Build and test
 
-### v2 - Growth System
-- Step-by-step kitty construction
-- Customizable tail types (straight, curved, question mark, excited)
-- Variable body dimensions and fluffiness
-- Different ear styles and whisker lengths
+Requirements: a C11 compiler, ncurses, and libm.
 
-### v1 - Basic Animation
-- Simple animated kitty with movement
-- Basic color support
-
-## Installation
-
-### Requirements
-- C compiler (gcc, clang)
-- ncurses library
-- math library (for v3)
-
-### Building from source
-
-```bash
-# Build all versions
+```sh
 make
-
-# Install latest version
-sudo make install
-
-# Build specific version
-make ckitty_v3
+make check              # build, core tests, CLI/error tests
+make sanitize           # AddressSanitizer + UndefinedBehaviorSanitizer
 ```
 
-### macOS (Homebrew)
-```bash
+On macOS, Homebrew ncurses is detected automatically when installed:
+
+```sh
 brew install ncurses
-make
+make check
 ```
 
-### Linux
-```bash
-# Debian/Ubuntu
-sudo apt-get install libncurses5-dev libncursesw5-dev
+On Debian/Ubuntu, install `libncurses-dev`; Fedora uses `ncurses-devel`.
 
-# Fedora
-sudo dnf install ncurses-devel
+## Run
 
-# Arch
-sudo pacman -S ncurses
-
-make
+```sh
+./ckitty -c
+./ckitty -l -c                  # live reveal
+./ckitty -S -c                  # screensaver
+./ckitty -s 42 -p play -c       # reproducible playing kitty
+./ckitty --dump --seed 123 --pose sit --frame 0
 ```
 
-## Usage
+Use `ckitty -h` for the authoritative option list. Interactive controls are `q`/Escape to quit, Space to cycle poses, and `n` to create a new kitty.
 
-### Basic Commands
-```bash
-# Generate a random kitty
-ckitty
+`--dump` never initializes ncurses and writes only the minimal non-blank ASCII bounding box, making it useful in pipes and automated tests. `--width` and `--height` select its canvas; the renderer rejects unreasonably large canvases rather than risking an overflow.
 
-# Watch kitty grow live (like cbonsai)
-ckitty -l -c
+## Install
 
-# Specific pose with colors
-ckitty -c
-
-# Rainbow mode
-ckitty -r
-
-# Screensaver mode
-ckitty -S -c
-
-# Generate same kitty with seed
-ckitty -s 42 -c
-
-# Custom message
-ckitty -m "Hello Kitty!" -c
+```sh
+./install.sh --prefix "$HOME/.local"
+# or, for a system prefix:
+sudo make install PREFIX=/usr/local
 ```
 
-### Controls
-- `q` or `ESC` - Quit
-- `Space` - Change pose (v3)
-- `n` - New kitty in screensaver mode (v3)
+The installer runs `make check` and never invokes `sudo` itself. Use `--skip-tests` only when a package build system has already verified the source. Remove an installed binary with `make uninstall PREFIX=...`.
 
-### Options
-```
--h, --help          Show help message
--l, --live          Live generation mode (watch it grow)
--d, --delay <ms>    Animation delay (default: 40000)
--c, --colors        Enable colors
--r, --rainbow       Rainbow mode
--s, --seed <num>    Set random seed for reproducible kitties
--i, --infinite      Run indefinitely
--S, --screensaver   Screensaver mode (continuous generation)
--m, --message <msg> Display custom message
-```
+## Release checklist
 
-## Examples
+1. Update `CKITTY_VERSION` in `src/ckitty.c` and the matching documentation if the release changes.
+2. Run `make clean`, `make check`, and `make sanitize` on a supported host.
+3. Verify `./ckitty --dump --seed 123 --pose sit --frame 0` and `./ckitty --help`.
+4. Build with the release compiler on Linux and macOS, then package the source tree (including `src/`, `tests/`, `Makefile`, and `LICENSE`).
+5. Install into a temporary prefix and verify `bin/ckitty`, then run `make uninstall` for that prefix.
 
-```bash
-# Playful kitty with yarn ball
-ckitty -c -s 123
-
-# Sleeping kitty
-ckitty -c -s 456
-
-# Live growing rainbow kitty
-ckitty -l -r
-
-# Screensaver with custom delay
-ckitty -S -c -d 20000
-```
-
-## Demo
-
-### Quick Start
-```bash
-# See a random kitty
-./ckitty_v3 -c
-
-# Watch a kitty being "grown" (like cbonsai)
-./ckitty_v3 -l -c
-
-# Screensaver mode - endless kitties!
-./ckitty_v3 -S -c
-```
-
-### Gallery of Kitties
-
-Different seeds generate different kitties:
-
-```bash
-# Playful kitty with yarn ball (seed: 123)
-./ckitty_v3 -c -s 123
-
-# Sleepy kitty (seed: 456)  
-./ckitty_v3 -c -s 456
-
-# Alert kitty (seed: 789)
-./ckitty_v3 -c -s 789
-```
-
-## Algorithm
-
-Like cbonsai, ckitty uses procedural generation:
-
-1. **Pose Selection**: Randomly chooses kitty's pose
-2. **Part Generation**: Builds kitty parts in sequence
-   - Tail (with curve algorithms)
-   - Body (with fluffiness factor)
-   - Head and facial features
-   - Environmental elements
-3. **Animation System**: Continuous updates for lifelike movement
-4. **Physics**: Tail sway uses sine waves, whiskers have twitch probability
-
-## Comparison with cbonsai
-
-| Feature | cbonsai | ckitty |
-|---------|---------|---------|
-| Procedural generation | ✓ Trees grow organically | ✓ Kitties built step-by-step |
-| Live mode | ✓ Watch branches grow | ✓ Watch kitty parts appear |
-| Randomization | ✓ Unique trees | ✓ Unique kitties |
-| Animation | ✓ Swaying leaves | ✓ Blinking, tail swaying |
-| Customization | ✓ Tree types, sizes | ✓ Poses, colors, features |
-| Screensaver | ✓ | ✓ Endless kitties |
-| Seeds | ✓ Reproducible trees | ✓ Reproducible kitties |
+There are no generated or versioned v1/v2/v3 binaries; `ckitty` is the supported product name.
 
 ## Contributing
 
-Feel free to submit issues and enhancement requests!
-
-## Credits
-
-Inspired by [cbonsai](https://gitlab.com/jallbrit/cbonsai) by John Allbritten
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [EXAMPLES.md](EXAMPLES.md).
 
 ## License
 
-GPL-3.0
+GPL-3.0. See [LICENSE](LICENSE).
