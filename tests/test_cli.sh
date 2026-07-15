@@ -4,7 +4,7 @@ set -eu
 binary=$1
 
 help_output=$("$binary" --help)
-printf '%s\n' "$help_output" | grep -F 'Usage: ckitty [OPTIONS]' >/dev/null
+printf '%s\n' "$help_output" | grep -F 'Usage: ckitty [POSE] [OPTIONS]' >/dev/null
 printf '%s\n' "$help_output" | grep -F -- '--dump' >/dev/null
 [ "$("$binary" --version)" = 'ckitty 1.0.0' ]
 
@@ -16,6 +16,8 @@ printf '%s\n' "$first" | grep -F '(_)' >/dev/null
 for pose in sit sleep play walk; do
     output=$("$binary" --dump --seed 123 --pose "$pose" --frame 0)
     [ -n "$output" ]
+    positional=$("$binary" --dump --seed 123 "$pose" --frame 0)
+    [ "$output" = "$positional" ]
 done
 
 frame_zero=$("$binary" --dump --seed 999 --pose sit --frame 0)
@@ -36,6 +38,7 @@ expect_failure --dump --height 0
 expect_failure --dump --frame nope
 expect_failure --dump --width 4000 --height 4000
 expect_failure --dump unexpected
+expect_failure --dump sit walk
 expect_failure --not-an-option
 
 echo 'CLI OK'

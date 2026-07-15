@@ -34,7 +34,7 @@ jobs:
 
       - name: Verify headless rendering
         run: |
-          ./ckitty --dump --seed 123 --pose sit --frame 0 > /tmp/ckitty-frame.txt
+          ./ckitty --dump --seed 123 sit --frame 0 > /tmp/ckitty-frame.txt
           test -s /tmp/ckitty-frame.txt
           ./ckitty --version
 

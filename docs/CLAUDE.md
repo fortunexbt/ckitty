@@ -27,18 +27,18 @@ sudo make install
 
 ```bash
 # Basic run (after building)
-./ckitty -c
+./ckitty
 
 # Live generation mode (watch it grow like cbonsai)
-./ckitty -l -c
+./ckitty -l
 
 # Test specific features
-./ckitty -c -s 123     # Specific seed for reproducible kitty
-./ckitty -S -c         # Screensaver mode
+./ckitty -s 123        # Specific seed for reproducible kitty
+./ckitty -S            # Screensaver mode
 ./ckitty -h            # Help to verify options parsing
 
 # Render one frame without ncurses (useful for debugging/CI)
-./ckitty --dump --seed 123 --pose sit --frame 0
+./ckitty --dump --seed 123 sit --frame 0
 ```
 
 ## Architecture Overview
