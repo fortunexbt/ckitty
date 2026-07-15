@@ -26,7 +26,8 @@ ckitty/
 │   └── ckitty_core.h     # Core API used by app + tests
 └── tests/
     ├── test_ckitty_core.c # Deterministic core/property tests
-    └── test_cli.sh        # Headless CLI and error-path tests
+    ├── test_cli.sh        # Headless CLI and error-path tests
+    └── test_resize.py     # Pseudo-terminal resize regression test
 ```
 
 ## File Descriptions

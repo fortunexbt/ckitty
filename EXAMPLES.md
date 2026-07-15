@@ -44,4 +44,4 @@ Delays are microseconds and are clamped to a safe 1 ms minimum. `--dump` is the 
 
 ## Terminal behavior
 
-The app redraws its canvas after terminal resize and clips art at the available edges. Color is automatic when supported; plain ASCII remains the fallback for terminals without color support or when `--ascii`/`NO_COLOR` is used. A terminal around 80×24 gives the most room for environmental details, but smaller sizes are supported.
+The app redraws its canvas after terminal resize and clips art at the available edges. On genuinely tiny terminals it politely shows a resize hint instead of producing broken partial art. Color is automatic when supported; plain ASCII remains the fallback for terminals without color support or when `--ascii`/`NO_COLOR` is used. A terminal around 80×24 gives the most room for environmental details, but smaller sizes are supported.
