@@ -104,28 +104,33 @@ static int parse_pose(const char* s) {
 
 static void print_usage(FILE* stream) {
     fprintf(stream, "ckitty %s - a procedural, animated terminal kitty\n\n", CKITTY_VERSION);
-    fprintf(stream, "Usage: ckitty [OPTIONS]\n\n");
-    fprintf(stream, "Options:\n");
+    fprintf(stream, "Usage: ckitty [POSE] [OPTIONS]\n\n");
+    fprintf(stream, "Start here:\n");
+    fprintf(stream, "  ckitty                 Bring a colorful kitty to life\n");
+    fprintf(stream, "  ckitty play            Start with a playful pose\n");
+    fprintf(stream, "  ckitty --ascii         Force readable, color-free ASCII\n\n");
+    fprintf(stream, "Everyday options:\n");
     fprintf(stream, "  -h, --help             Show this help message\n");
-    fprintf(stream, "  -c, --colors           Enable colors when supported\n");
-    fprintf(stream, "  -a, --ascii            Force plain ASCII output (also honors NO_COLOR)\n");
-    fprintf(stream, "  -r, --rainbow          Animate colors across the kitty\n");
+    fprintf(stream, "  -a, --ascii            Disable color (also honors NO_COLOR)\n");
+    fprintf(stream, "  -r, --rainbow          Add a gentle color shimmer\n");
     fprintf(stream, "  -l, --live             Reveal the kitty piece by piece\n");
-    fprintf(stream, "  -S, --screensaver      Spawn a new kitty periodically\n");
-    fprintf(stream, "  -i, --infinite         Run until quit (otherwise about 24 seconds)\n");
-    fprintf(stream, "  -s, --seed <num>       Set a reproducible unsigned 32-bit seed\n");
-    fprintf(stream, "  -d, --delay <us>       Frame delay in microseconds (default: %d)\n", DELAY_DEFAULT_US);
-    fprintf(stream, "  -g, --grow-delay <us>  Live reveal delay (default: %d)\n", GROW_DELAY_DEFAULT_US);
+    fprintf(stream, "  -S, --screensaver      Change kitties every few seconds\n");
     fprintf(stream, "  -p, --pose <name>      sit|sleep|play|walk|random\n");
-    fprintf(stream, "  -m, --message <text>   Display a message in interactive mode\n");
-    fprintf(stream, "      --dump             Render one frame to stdout without ncurses\n");
-    fprintf(stream, "      --width <cols>     Dump canvas width (default: 80)\n");
-    fprintf(stream, "      --height <rows>    Dump canvas height (default: 24)\n");
-    fprintf(stream, "      --frame <n>        Dump frame number (default: 0)\n");
+    fprintf(stream, "  -m, --message <text>   Add a small message below the art\n\n");
+    fprintf(stream, "Reproducible / power-user options:\n");
+    fprintf(stream, "  -s, --seed <num>       Set a reproducible unsigned 32-bit seed\n");
+    fprintf(stream, "      --dump             Render one frame to stdout (no ncurses)\n");
+    fprintf(stream, "      --frame <n>        Choose the frame for --dump (default: 0)\n");
+    fprintf(stream, "      --width <cols>     --dump canvas width (default: 80)\n");
+    fprintf(stream, "      --height <rows>    --dump canvas height (default: 24)\n");
+    fprintf(stream, "  -d, --delay <us>       Animation delay (default: %d)\n", DELAY_DEFAULT_US);
+    fprintf(stream, "  -g, --grow-delay <us>  Reveal delay (default: %d)\n", GROW_DELAY_DEFAULT_US);
+    fprintf(stream, "  -c, --colors           Compatibility alias; color is automatic\n");
+    fprintf(stream, "  -i, --infinite         Compatibility alias; interactive mode is endless\n");
     fprintf(stream, "      --version          Show the version\n\n");
     fprintf(stream, "Interactive controls:\n");
     fprintf(stream, "  q / ESC   quit     space   cycle pose     n   new kitty\n");
-    fprintf(stream, "\nDump mode is deterministic and is suitable for scripts and CI.\n");
+    fprintf(stream, "\nTip: use --dump with --seed, a pose, and --frame for scripts and CI.\n");
 }
 
 static int init_colors(void) {
@@ -264,11 +269,11 @@ int main(int argc, char* argv[]) {
         .delay_us = DELAY_DEFAULT_US,
         .grow_delay_us = GROW_DELAY_DEFAULT_US,
         .live = 0,
-        .colors = 0,
+        .colors = 1,
         .ascii = getenv("NO_COLOR") != NULL,
         .rainbow = 0,
         .screensaver = 0,
-        .infinite = 0,
+        .infinite = 1,
         .has_seed = 0,
         .seed = 0,
         .message = NULL,
@@ -398,8 +403,16 @@ int main(int argc, char* argv[]) {
     }
 
     if (optind < argc) {
-        fprintf(stderr, "ckitty: unexpected argument: %s\n", argv[optind]);
-        return 2;
+        if (optind + 1 != argc || cfg.pose_override >= 0) {
+            fprintf(stderr, "ckitty: expected one pose (sit, sleep, play, or walk)\n");
+            return 2;
+        }
+        int pose = parse_pose(argv[optind]);
+        if (pose == -2) {
+            fprintf(stderr, "ckitty: invalid pose: %s\n", argv[optind]);
+            return 2;
+        }
+        cfg.pose_override = pose;
     }
     if (cfg.delay_us < MIN_DELAY_US) cfg.delay_us = MIN_DELAY_US;
     if (cfg.grow_delay_us < MIN_DELAY_US) cfg.grow_delay_us = MIN_DELAY_US;
