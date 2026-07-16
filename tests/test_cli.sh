@@ -4,6 +4,10 @@ set -eu
 binary=$1
 
 help_output=$("$binary" --help)
+if printf '%s\n' "$help_output" | grep -F -- '--infinite' >/dev/null; then
+    echo "compatibility flags should stay out of the friendly help" >&2
+    exit 1
+fi
 printf '%s\n' "$help_output" | grep -F 'Usage: ckitty [POSE] [OPTIONS]' >/dev/null
 printf '%s\n' "$help_output" | grep -F -- '--dump' >/dev/null
 [ "$("$binary" --version)" = 'ckitty 1.0.0' ]
@@ -19,6 +23,9 @@ for pose in sit sleep play walk; do
     positional=$("$binary" --dump --seed 123 "$pose" --frame 0)
     [ "$output" = "$positional" ]
 done
+
+play_output=$("$binary" --dump --seed 123 play)
+printf '%s\n' "$play_output" | grep -F '\__/' >/dev/null
 
 frame_zero=$("$binary" --dump --seed 999 --pose sit --frame 0)
 frame_later=$("$binary" --dump --seed 999 --pose sit --frame 40)

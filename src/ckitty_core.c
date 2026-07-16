@@ -426,7 +426,8 @@ static void render_playing(const ckitty_kitty* k, uint64_t frame, ckitty_canvas*
 
     int dir = (k->facing >= 0) ? 1 : -1;
     int cx = k->cx;
-    int cy = k->cy;
+    int bounce_phase = (int)((frame / 10ULL) % 4ULL);
+    int cy = k->cy + ((bounce_phase == 1) ? 1 : ((bounce_phase == 3) ? -1 : 0));
 
     // Stretch body: use the same rounded silhouette as the sitting pose so
     // the character remains a cat while its stance changes.
@@ -438,12 +439,15 @@ static void render_playing(const ckitty_kitty* k, uint64_t frame, ckitty_canvas*
     body.body_h = 3;
     render_body_box(&body, c, body_left, cy + 1, &rng);
 
-    // Paws up front, reaching toward the toy.
-    int paw_x = (dir > 0) ? body_right : body_left;
-    put(c, paw_x, cy, '/', CKCLR_PAW);
-    put(c, paw_x + dir, cy - 1, '_', CKCLR_PAW);
-    put(c, paw_x + 2 * dir, cy, '\\', CKCLR_PAW);
-    put(c, paw_x + dir, cy + 1, '/', CKCLR_PAW);
+    // Paws up front, reaching toward the toy. Keep them below the face so
+    // the pounce reads as one connected cat instead of face/paw collisions.
+    if (dir > 0) {
+        put_str(c, body_right + 1, cy + 1, "/__\\", CKCLR_PAW);
+        put(c, body_right + 3, cy + 2, '|', CKCLR_PAW);
+    } else {
+        put_str(c, body_left - 4, cy + 1, "\\__/", CKCLR_PAW);
+        put(c, body_left - 3, cy + 2, '|', CKCLR_PAW);
+    }
 
     // Excited tail behind.
     int tail_base_x = (dir > 0) ? body_left - 1 : body_right + 1;
@@ -458,11 +462,12 @@ static void render_playing(const ckitty_kitty* k, uint64_t frame, ckitty_canvas*
     // Toys.
     if (k->has_yarn) {
         int yx = (dir > 0) ? (body_right + 11) : (body_left - 11);
-        render_yarn_ball(c, yx, cy + 2);
+        int toy_bob = ((int)(frame / 12ULL) % 3 == 1) ? -1 : 0;
+        render_yarn_ball(c, yx, cy + 2 + toy_bob);
     }
     if (k->has_mouse) {
         int mx = (dir > 0) ? (body_right + 10) : (body_left - 10);
-        render_mouse(c, mx, cy + 3);
+        render_mouse(c, mx, cy + 3 + ((int)(frame / 12ULL) % 3 == 1 ? -1 : 0));
     }
     if (k->has_bird) {
         render_bird(c, cx + k->bird_dx, cy - 6 + k->bird_dy);
