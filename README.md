@@ -1,7 +1,7 @@
 # ckitty
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/fortunexbt/ckitty/93e353e/assets/ckitty-banner.svg" alt="ckitty, a tiny terminal cat" width="900">
+  <img src="https://raw.githubusercontent.com/fortunexbt/ckitty/main/assets/ckitty-banner.svg" alt="ckitty, a tiny terminal cat" width="900">
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/fortunexbt/ckitty/93e353e/assets/ckitty-demo.gif" alt="ckitty running in a terminal" width="900">
+  <img src="https://raw.githubusercontent.com/fortunexbt/ckitty/main/assets/ckitty-demo.gif" alt="ckitty running in a terminal" width="900">
 </p>
 
 ckitty is a small native program that draws procedural ASCII cats directly in your terminal. It has a few good poses, a gently animated tail, tiny surprises, and enough randomness to feel alive without becoming noisy.

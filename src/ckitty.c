@@ -117,20 +117,15 @@ static void print_usage(FILE* stream) {
     fprintf(stream, "  -S, --screensaver      Change kitties every few seconds\n");
     fprintf(stream, "  -p, --pose <name>      sit|sleep|play|walk|random\n");
     fprintf(stream, "  -m, --message <text>   Add a small message below the art\n\n");
-    fprintf(stream, "Reproducible / power-user options:\n");
+    fprintf(stream, "Scripts and demos:\n");
     fprintf(stream, "  -s, --seed <num>       Set a reproducible unsigned 32-bit seed\n");
     fprintf(stream, "      --dump             Render one frame to stdout (no ncurses)\n");
     fprintf(stream, "      --frame <n>        Choose the frame for --dump (default: 0)\n");
-    fprintf(stream, "      --width <cols>     --dump canvas width (default: 80)\n");
-    fprintf(stream, "      --height <rows>    --dump canvas height (default: 24)\n");
-    fprintf(stream, "  -d, --delay <us>       Animation delay (default: %d)\n", DELAY_DEFAULT_US);
-    fprintf(stream, "  -g, --grow-delay <us>  Reveal delay (default: %d)\n", GROW_DELAY_DEFAULT_US);
-    fprintf(stream, "  -c, --colors           Compatibility alias; color is automatic\n");
-    fprintf(stream, "  -i, --infinite         Compatibility alias; interactive mode is endless\n");
     fprintf(stream, "      --version          Show the version\n\n");
     fprintf(stream, "Interactive controls:\n");
     fprintf(stream, "  q / ESC   quit     space   cycle pose     n   new kitty\n");
     fprintf(stream, "\nTip: use --dump with --seed, a pose, and --frame for scripts and CI.\n");
+    fprintf(stream, "Advanced timing and canvas options remain available for demos.\n");
 }
 
 static int init_colors(void) {
@@ -674,7 +669,7 @@ int main(int argc, char* argv[]) {
         }
 
         erase();
-        draw_topbar(width, &cfg, &kitty, seed);
+        draw_topbar(width, &cfg, &kitty, kitty.seed);
         draw_tagline(width, height, &cfg, cfg.message, frame);
 
         int compact = width < 34 || height < 12;
@@ -683,7 +678,7 @@ int main(int argc, char* argv[]) {
         } else {
             draw_stage_frame(width, height, &cfg);
             draw_ground(width, height, &cfg);
-            draw_ambient(width, height, &cfg, seed, frame);
+            draw_ambient(width, height, &cfg, kitty.seed, frame);
 
             const ckitty_canvas* to_draw = &canvas;
             if (cfg.live && !grown) {
@@ -715,7 +710,7 @@ int main(int argc, char* argv[]) {
 
             draw_canvas_to_curses(to_draw, &cfg, frame);
         }
-        draw_footer(width, height, &cfg, &kitty, seed);
+        draw_footer(width, height, &cfg, &kitty, kitty.seed);
         refresh();
 
         int input = getch();
