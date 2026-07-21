@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/fortunexbt/ckitty/blob/main/LICENSE">GPL-3.0</a>
+  · <a href="https://github.com/fortunexbt/ckitty/releases">releases</a>
   · C11 · ncurses · macOS + Linux
 </p>
 
@@ -50,6 +51,8 @@ cd ckitty
 make
 ./ckitty
 ```
+
+Tagged releases also include checksumed Linux x86_64 and Apple silicon archives.
 
 ## The nice bits
 
