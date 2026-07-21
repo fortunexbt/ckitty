@@ -19,7 +19,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install ncurses (Linux)
         if: runner.os == 'Linux'
@@ -42,7 +42,7 @@ jobs:
     name: Sanitizers (Ubuntu)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install ncurses
         run: sudo apt-get update && sudo apt-get install -y libncurses-dev
       - name: Run sanitizer checks
