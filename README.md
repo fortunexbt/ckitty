@@ -15,10 +15,12 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/fortunexbt/ckitty/main/assets/ckitty-demo.gif" alt="ckitty running in a terminal" width="900">
+  <img src="https://raw.githubusercontent.com/fortunexbt/ckitty/main/assets/ckitty-demo.gif" alt="A gallery of ckitty's deterministic ASCII frames" width="900">
 </p>
 
-ckitty is a small native program that draws procedural ASCII cats directly in your terminal. It has a few good poses, a gently animated tail, tiny surprises, and enough randomness to feel alive without becoming noisy.
+<p align="center"><em>A gallery of <code>--dump</code> frames; the interactive app adds color and controls.</em></p>
+
+ckitty is a small native program that draws procedural ASCII cats directly in your terminal. It has four poses, a gently animated tail, soft ambient twinkles, and enough randomness to feel alive without becoming noisy. A warm amber palette and an unobtrusive interface make it a cozy place to leave your terminal.
 
 No account. No runtime. No Electron. Just a cat.
 
@@ -56,8 +58,10 @@ Tagged releases also include checksumed Linux x86_64 and Apple silicon archives.
 
 ## The nice bits
 
-- `ckitty` — a cozy default kitty
+- `ckitty` — a cozy kitty in warm amber
 - `ckitty play` — a little more energy
+- `ckitty --theme moon` — a cool evening palette (`forest` is available too)
+- `ckitty --quiet` — start with the interface hidden
 - `ckitty --ascii` — plain, color-free output
 - `ckitty -l` — a piece-by-piece reveal
 - `ckitty -S -m "back soon"` — a quiet screensaver
@@ -65,12 +69,18 @@ Tagged releases also include checksumed Linux x86_64 and Apple silicon archives.
 While it is running:
 
 ```text
-space   change pose
-n       summon a new kitty
-q / esc go home
+space         cycle poses
+1 / 2 / 3 / 4  sit / sleep / play / walk
+n             summon a new kitty
+p             pause or resume
+t             cycle amber / moon / forest
+h             hide or show the interface
+?             open help (temporarily pauses the scene)
+esc           close help, or quit when help is closed
+q             quit from anywhere
 ```
 
-The layout redraws safely when the terminal changes size. Very small windows get a friendly resize message instead of mangled art. Color is automatic when supported; `--ascii` and `NO_COLOR=1` keep things readable everywhere.
+Pause freezes motion, the piece-by-piece reveal, and screensaver movement. The layout adapts to smaller terminals and redraws safely on resize; very small windows get a friendly resize message. Palettes use 256 colors when available and fall back to eight colors. `--ascii` and `NO_COLOR=1` disable color, and terminals without color support stay readable.
 
 ## A deterministic kitty
 
@@ -80,7 +90,7 @@ For scripts, screenshots, tests, or just getting the same cat twice:
 ./ckitty --dump --seed 123 sit
 ```
 
-`--dump` does not initialize ncurses. It writes one clean frame to standard output, and it accepts `--frame`, `--width`, and `--height` when you need a particular canvas.
+`--dump` does not initialize ncurses. It writes one clean frame to standard output with no ANSI escapes, and it accepts `--frame`, `--width`, and `--height` when you need a particular canvas. Themes and interactive controls do not change its deterministic output.
 
 Most people never need the rest of the options. If you do, `ckitty --help` has the complete list.
 

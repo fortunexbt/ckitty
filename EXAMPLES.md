@@ -5,15 +5,20 @@ All examples use the one supported binary, `ckitty`. Run `make` first or replace
 ## Interactive
 
 ```sh
-ckitty                         # automatic color, random kitty, endless animation
-ckitty play                    # start in a playful pose
-ckitty --ascii                 # accessibility-friendly plain output
-NO_COLOR=1 ckitty              # same fallback through the standard convention
-ckitty -l                      # reveal the kitty piece by piece
-ckitty -S -m "back soon"       # screensaver with a message
+ckitty                          # warm amber, random kitty, endless animation
+ckitty play                     # start in a playful pose
+ckitty --theme moon sleep        # a cool evening palette
+ckitty --theme forest            # a soft green palette
+ckitty --quiet                   # start with the interface hidden
+ckitty --ascii                   # plain, color-free output
+NO_COLOR=1 ckitty                # disable color through the standard convention
+ckitty -l                        # reveal the kitty piece by piece
+ckitty -S -m "back soon"  # screensaver with a message
 ```
 
-Press `q` or Escape to quit, Space to cycle poses, and `n` to create a new kitty.
+Press Space to cycle poses, or choose one directly: `1` for sit, `2` for sleep, `3` for play, and `4` for walk. Press `n` for a new kitty, `t` to cycle amber, moon, and forest palettes, or `h` to hide or show the interface.
+
+`p` pauses and resumes motion, reveal progress, and screensaver movement. `?` opens help and temporarily pauses the scene. Escape closes help, or quits when help is closed; `q` always quits.
 
 ## Reproducible frames
 
@@ -24,7 +29,7 @@ ckitty --dump --seed 42 play --frame 0
 ckitty --dump --seed 42 walk --frame 12
 ```
 
-The same seed, pose, frame, width, and height produce the same output. This makes it easy to save a frame or compare renderer changes:
+The same seed, pose, frame, width, and height produce the same output. `--dump` is always free of ANSI escapes, regardless of theme, and does not require a terminal. This makes it easy to save a frame or compare renderer changes:
 
 ```sh
 ckitty --dump --seed 123 sit --frame 0 > kitty.txt
@@ -44,4 +49,6 @@ Delays are microseconds and are clamped to a safe 1 ms minimum. `--dump` is the 
 
 ## Terminal behavior
 
-The app redraws its canvas after terminal resize and clips art at the available edges. On genuinely tiny terminals it politely shows a resize hint instead of producing broken partial art. Color is automatic when supported; plain ASCII remains the fallback for terminals without color support or when `--ascii`/`NO_COLOR` is used. A terminal around 80×24 gives the most room for environmental details, but smaller sizes are supported.
+The scene and interface adapt to the space available and redraw after terminal resize. Tiny terminals show a resize hint. A terminal around 80×24 gives the most room for environmental details, but smaller sizes are supported.
+
+The default theme is `amber`; select `amber`, `moon`, or `forest` with `--theme`. Palettes use 256 colors when available, with an eight-color fallback. `--ascii` and `NO_COLOR` disable color even when a theme is selected. The app also works in terminals without color support.
