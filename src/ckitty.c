@@ -1,10 +1,11 @@
-#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
 
 #include <ncurses.h>
 
 #include <errno.h>
 #include <getopt.h>
 #include <limits.h>
+#include <locale.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,10 +13,11 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+#include <wchar.h>
 
 #include "ckitty_core.h"
 
-#define CKITTY_VERSION "1.0.0"
+#define CKITTY_VERSION "1.1.0"
 #define DELAY_DEFAULT_US 40000
 #define GROW_DELAY_DEFAULT_US 60000
 #define MIN_DELAY_US 1000
@@ -29,7 +31,6 @@ typedef struct {
     int ascii;
     int rainbow;
     int screensaver;
-    int infinite;
     int has_seed;
     uint32_t seed;
     const char* message;
@@ -38,6 +39,8 @@ typedef struct {
     int dump_w;
     int dump_h;
     uint64_t dump_frame;
+    int theme;
+    int quiet;
     int pose_override;  // -1 means random
 } Config;
 
@@ -52,15 +55,6 @@ static uint64_t now_ms(void) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (uint64_t)tv.tv_sec * 1000ULL + (uint64_t)tv.tv_usec / 1000ULL;
-}
-
-static void sleep_us(int delay_us) {
-    struct timespec requested;
-    requested.tv_sec = delay_us / 1000000;
-    requested.tv_nsec = (long)(delay_us % 1000000) * 1000L;
-    while (nanosleep(&requested, &requested) != 0 && errno == EINTR) {
-        /* Resume after an interrupt. */
-    }
 }
 
 static int parse_int(const char* s, int* out) {
@@ -112,231 +106,300 @@ static void print_usage(FILE* stream) {
     fprintf(stream, "Everyday options:\n");
     fprintf(stream, "  -h, --help             Show this help message\n");
     fprintf(stream, "  -a, --ascii            Disable color (also honors NO_COLOR)\n");
+    fprintf(stream, "      --theme <name>     amber|moon|forest (default: amber)\n");
+    fprintf(stream, "      --quiet            Start with the interface hidden\n");
     fprintf(stream, "  -r, --rainbow          Add a gentle color shimmer\n");
     fprintf(stream, "  -l, --live             Reveal the kitty piece by piece\n");
     fprintf(stream, "  -S, --screensaver      Change kitties every few seconds\n");
     fprintf(stream, "  -p, --pose <name>      sit|sleep|play|walk|random\n");
-    fprintf(stream, "  -m, --message <text>   Add a small message below the art\n\n");
+    fprintf(stream, "  -m, --message <text>   Add a small message under the title\n\n");
     fprintf(stream, "Scripts and demos:\n");
     fprintf(stream, "  -s, --seed <num>       Set a reproducible unsigned 32-bit seed\n");
     fprintf(stream, "      --dump             Render one frame to stdout (no ncurses)\n");
     fprintf(stream, "      --frame <n>        Choose the frame for --dump (default: 0)\n");
     fprintf(stream, "      --version          Show the version\n\n");
     fprintf(stream, "Interactive controls:\n");
-    fprintf(stream, "  q / ESC   quit     space   cycle pose     n   new kitty\n");
+    fprintf(stream, "  space / 1-4   pose     n   new kitty     p   pause / resume\n");
+    fprintf(stream, "  t   palette     h   hide interface     ?   help\n");
+    fprintf(stream, "  q   quit     ESC   close help, or quit\n");
     fprintf(stream, "\nTip: use --dump with --seed, a pose, and --frame for scripts and CI.\n");
     fprintf(stream, "Advanced timing and canvas options remain available for demos.\n");
 }
 
-static int init_colors(void) {
-    if (start_color() == ERR) return 0;
+/* Palettes use terminal-owned backgrounds, including transparent terminals.
+ * Never redefine the user's base colors. */
+typedef struct {
+    const char* name;
+    short rich[7];
+    short basic[7];
+} Theme;
+
+static const Theme themes[] = {
+    {"amber", {222, 230, 210, 181, 114, 245, 240},
+     {COLOR_YELLOW, COLOR_WHITE, COLOR_RED, COLOR_MAGENTA, COLOR_GREEN, COLOR_WHITE, COLOR_WHITE}},
+    {"moon", {153, 195, 218, 183, 147, 245, 240},
+     {COLOR_CYAN, COLOR_WHITE, COLOR_RED, COLOR_MAGENTA, COLOR_BLUE, COLOR_WHITE, COLOR_WHITE}},
+    {"forest", {151, 230, 216, 180, 109, 245, 240},
+     {COLOR_GREEN, COLOR_WHITE, COLOR_RED, COLOR_YELLOW, COLOR_CYAN, COLOR_WHITE, COLOR_WHITE}}
+};
+#define THEME_COUNT ((int)(sizeof(themes) / sizeof(themes[0])))
+
+static int parse_theme(const char* name) {
+    for (int i = 0; i < THEME_COUNT; i++) {
+        if (strcmp(name, themes[i].name) == 0) return i;
+    }
+    return -1;
+}
+
+static int apply_theme(int theme) {
+    if (COLORS < 8 || COLOR_PAIRS <= CKCLR_GROUND) return 0;
+    short background = COLOR_BLACK;
 #ifdef NCURSES_VERSION
-    use_default_colors();
+    if (use_default_colors() != ERR) background = -1;
 #endif
-    init_pair(CKCLR_FUR, COLOR_YELLOW, -1);
-    init_pair(CKCLR_PAW, COLOR_WHITE, -1);
-    init_pair(CKCLR_NOSE, COLOR_RED, -1);
-    init_pair(CKCLR_TOY, COLOR_MAGENTA, -1);
-    init_pair(CKCLR_ACCENT, COLOR_CYAN, -1);
-    init_pair(CKCLR_GRAY, COLOR_WHITE, -1);
-    init_pair(CKCLR_GROUND, COLOR_GREEN, -1);
+    for (short pair = CKCLR_FUR; pair <= CKCLR_GROUND; pair++) {
+        short foreground = COLORS >= 256 ? themes[theme].rich[pair - 1] : themes[theme].basic[pair - 1];
+        if (init_pair(pair, foreground, background) == ERR) return 0;
+    }
     return 1;
 }
 
-static void draw_canvas_to_curses(const ckitty_canvas* canvas, const Config* cfg, uint64_t frame) {
-    if (!canvas || !cfg) return;
+static void style(const Config* cfg, int color, int bold) {
+    attrset(A_NORMAL);
+    if (cfg->colors && !cfg->ascii) attron(COLOR_PAIR(color));
+    if (bold) attron(A_BOLD);
+}
 
-    for (int y = 0; y < canvas->h; y++) {
-        for (int x = 0; x < canvas->w; x++) {
-            char ch = ckitty_canvas_get(canvas, x, y);
-            if (ch == ' ') continue;
-
-            uint8_t active = ckitty_canvas_get_color(canvas, x, y);
-            int color_on = cfg->colors && !cfg->ascii;
-            if (color_on && cfg->rainbow) {
-                active = (uint8_t)(((frame / 10ULL) + (uint64_t)x + (uint64_t)y) % 7ULL + 1ULL);
-            }
-            if (color_on && active >= CKCLR_FUR && active <= CKCLR_GROUND) {
-                attron(COLOR_PAIR(active));
-            }
-
-            (void)mvaddch(y, x, (chtype)(unsigned char)ch);
-
-            if (color_on && active >= CKCLR_FUR && active <= CKCLR_GROUND) {
-                attroff(COLOR_PAIR(active));
-            }
+/* Messages are data: control bytes must never move the cursor or wrap into
+ * another UI row. Art and interface labels deliberately stay plain ASCII. */
+static void text_at(int y, int x, int limit, const char* text) {
+    if (!text || limit <= 0 || y < 0 || y >= LINES || x < 0 || x >= COLS) return;
+    if (limit > COLS - x) limit = COLS - x;
+    (void)move(y, x);
+    mbstate_t state = {0};
+    size_t remaining = strlen(text);
+    int columns = 0;
+    while (remaining > 0) {
+        wchar_t ch;
+        size_t bytes = mbrtowc(&ch, text, remaining, &state);
+        if (bytes == (size_t)-1 || bytes == (size_t)-2) {
+            /* Invalid input or a non-UTF-8 locale still gets safe, bounded text. */
+            state = (mbstate_t){0};
+            bytes = 1;
+            ch = L'?';
         }
+        if (bytes == 0) break;
+        int cells = wcwidth(ch);
+        if (cells < 0) { ch = L' '; cells = 1; }
+        if (columns + cells > limit) break;
+        /* A leading combining mark must not attach to an unrelated UI cell. */
+        if (cells > 0 || columns > 0) (void)addnwstr(&ch, 1);
+        columns += cells;
+        text += bytes;
+        remaining -= bytes;
     }
+}
+
+static void centered(int y, int width, const char* text) {
+    int len = (int)strnlen(text, (size_t)width);
+    text_at(y, (width - len) / 2, len, text);
 }
 
 static const char* pose_name(ckitty_pose pose) {
-    switch (pose) {
-        case CKPOSE_SIT:
-            return "sit";
-        case CKPOSE_SLEEP:
-            return "sleep";
-        case CKPOSE_PLAY:
-            return "play";
-        case CKPOSE_WALK:
-        default:
-            return "walk";
+    static const char* const names[] = {"sit", "sleep", "play", "walk"};
+    return names[(int)pose];
+}
+
+static const char* pose_mood(ckitty_pose pose) {
+    static const char* const moods[] = {
+        "watching the world", "do not disturb", "one more pounce", "a little wander"
+    };
+    return moods[(int)pose];
+}
+
+typedef struct {
+    int left, right, top, bottom;
+    int small;
+} Stage;
+
+static Stage stage_layout(int width, int height, const Config* cfg) {
+    Stage stage = {2, width - 3, cfg->quiet ? 1 : 5,
+                   height - (cfg->quiet ? 2 : 5), 0};
+    stage.small = stage.right - stage.left < 39 || stage.bottom - stage.top < 9;
+    return stage;
+}
+
+static void draw_chrome(int width, int height, const Config* cfg,
+                        const ckitty_kitty* kitty, uint32_t seed, int paused, int growing) {
+    if (cfg->quiet || width < 20 || height < 8) return;
+    int narrow = width < 54 || height < 16;
+    style(cfg, CKCLR_FUR, 1);
+    text_at(0, 2, width - 4, "ckitty");
+    style(cfg, CKCLR_ACCENT, 0);
+    text_at(0, width - (int)strlen(themes[cfg->theme].name) - 2, 8, themes[cfg->theme].name);
+    if (!narrow) {
+        style(cfg, CKCLR_GRAY, 0);
+        text_at(1, 2, width - 4, cfg->message ? cfg->message : "a little company, right here.");
+        int x = 2;
+        for (int i = 0; i < 4; i++) {
+            char tab[24];
+            (void)snprintf(tab, sizeof(tab), i == (int)kitty->pose ? "[%d %s]" : " %d %s ",
+                           i + 1, pose_name((ckitty_pose)i));
+            style(cfg, i == (int)kitty->pose ? CKCLR_FUR : CKCLR_GRAY, i == (int)kitty->pose);
+            text_at(3, x, width - x - 2, tab);
+            x += (int)strlen(tab) + 2;
+        }
+        style(cfg, CKCLR_GROUND, 0);
+        (void)mvhline(height - 3, 2, '-', width - 4);
+    } else if (cfg->message) {
+        style(cfg, CKCLR_GRAY, 0);
+        text_at(1, 2, width - 4, cfg->message);
     }
-}
-
-static void draw_stage_frame(int width, int height, const Config* cfg) {
-    if (!cfg || width < 12 || height < 8) return;
-
-    int left = 2;
-    int right = width - 3;
-    int top = 2;
-    int bottom = height - 3;
-    int color_on = cfg->colors && !cfg->ascii;
-    if (color_on) attron(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
-
-    (void)mvaddch(top, left, '+');
-    (void)mvaddch(top, right, '+');
-    (void)mvaddch(bottom, left, '+');
-    (void)mvaddch(bottom, right, '+');
-    for (int x = left + 1; x < right; x++) {
-        (void)mvaddch(top, x, '-');
-        (void)mvaddch(bottom, x, '-');
-    }
-    for (int y = top + 1; y < bottom; y++) {
-        (void)mvaddch(y, left, '|');
-        (void)mvaddch(y, right, '|');
-    }
-
-    if (color_on) attroff(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
-}
-
-static void draw_topbar(int width, const Config* cfg, const ckitty_kitty* kitty, uint32_t seed) {
-    if (!cfg || !kitty || width <= 0) return;
-    int color_on = cfg->colors && !cfg->ascii;
-    char meta[96];
-    (void)snprintf(meta, sizeof(meta), " %s | seed %u ", pose_name(kitty->pose), (unsigned)seed);
-    size_t meta_len = strlen(meta);
-
-    if (color_on) attron(COLOR_PAIR(CKCLR_ACCENT) | A_BOLD);
-    else attron(A_BOLD);
-    (void)mvhline(0, 0, ' ', width);
-    if (width > 4) (void)mvaddnstr(0, 2, " ckitty ", width - 4);
-    if (width > 14 && meta_len < (size_t)(width - 14)) {
-        int meta_x = width - (int)meta_len - 2;
-        (void)mvaddnstr(0, meta_x, meta, (int)meta_len);
-    }
-    if (color_on) attroff(COLOR_PAIR(CKCLR_ACCENT) | A_BOLD);
-    else attroff(A_BOLD);
-}
-
-static void draw_ground(int width, int height, const Config* cfg) {
-    int y = height - 5;
-    if (!cfg || width < 12 || height <= 0 || y < 0 || y >= height) return;
-    int color_on = cfg->colors && !cfg->ascii;
-    if (color_on) attron(COLOR_PAIR(CKCLR_GROUND) | A_DIM);
-    for (int x = 4; x < width - 4; x++) {
-        if ((x - 4) % 3 == 0) (void)mvaddch(y, x, '.');
-    }
-    if (color_on) attroff(COLOR_PAIR(CKCLR_GROUND) | A_DIM);
-}
-
-static void draw_centered_text(int y, int width, const char* text) {
-    if (y < 0 || y >= LINES || width <= 0 || !text) return;
-    size_t length = strlen(text);
-    if (length > (size_t)INT_MAX) length = INT_MAX;
-    int visible = (length > (size_t)width) ? width : (int)length;
-    int x = (width - visible) / 2;
-    (void)mvaddnstr(y, x, text, visible);
-}
-
-static void draw_footer(int width, int height, const Config* cfg, const ckitty_kitty* kitty, uint32_t seed) {
-    if (!cfg || !kitty || height < 2 || width <= 0) return;
-    int color_on = cfg->colors && !cfg->ascii;
-    char left[96];
-    const char* hints = " q quit   space pose   n new kitty ";
-    (void)snprintf(left, sizeof(left), " %s | seed %u ", pose_name(kitty->pose), (unsigned)seed);
-
-    if (color_on) attron(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
-    else attron(A_DIM);
-    (void)mvhline(height - 2, 0, '-', width);
-    (void)mvaddnstr(height - 1, 0, left, width);
-    if (color_on) attroff(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
-    else attroff(A_DIM);
-
-    if (color_on) attron(COLOR_PAIR(CKCLR_ACCENT));
-    int hint_x = width - (int)strlen(hints);
-    if (hint_x > (int)strlen(left) + 2) (void)mvaddnstr(height - 1, hint_x, hints, width - hint_x);
-    if (color_on) attroff(COLOR_PAIR(CKCLR_ACCENT));
-}
-
-static void draw_tagline(int width, int height, const Config* cfg, const char* message, uint64_t frame) {
-    if (!cfg || width <= 0 || height < 2) return;
-    if (message) {
-        draw_centered_text(1, width, message);
-        return;
-    }
-
-    static const char* const dots[] = {"", ".", "..", "..."};
-    char tagline[64];
-    (void)snprintf(tagline, sizeof(tagline), "a tiny terminal cat%s", dots[(frame / 12ULL) % 4ULL]);
-    int color_on = cfg->colors && !cfg->ascii;
-    if (color_on) attron(COLOR_PAIR(CKCLR_GRAY));
-    draw_centered_text(1, width, tagline);
-    if (color_on) attroff(COLOR_PAIR(CKCLR_GRAY));
-}
-
-static void draw_ambient(int width, int height, const Config* cfg, uint32_t seed, uint64_t frame) {
-    if (!cfg || width < 34 || height < 12) return;
-    int color_on = cfg->colors && !cfg->ascii;
-    int x_span = width - 12;
-    int y_span = height - 10;
-    uint32_t tick = (uint32_t)(frame / 10ULL);
-
-    for (uint32_t i = 0; i < 5U; i++) {
-        uint32_t value = seed ^ (0x9e3779b9U * (i + 1U)) ^ (tick * (0x45d9f3bU + i));
-        value ^= value >> 16;
-        int x = 6 + (int)(value % (uint32_t)x_span);
-        int y = 4 + (int)((value >> 8) % (uint32_t)y_span);
-        int phase = (int)((tick + i * 3U) % 7U);
-        if (phase == 0 || phase == 1) {
-            if (color_on) attron(COLOR_PAIR(CKCLR_ACCENT));
-            (void)mvaddch(y, x, phase == 0 ? '*' : '+');
-            if (color_on) attroff(COLOR_PAIR(CKCLR_ACCENT));
-        } else {
-            if (color_on) attron(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
-            else attron(A_DIM);
-            (void)mvaddch(y, x, '.');
-            if (color_on) attroff(COLOR_PAIR(CKCLR_GRAY) | A_DIM);
-            else attroff(A_DIM);
+    char status[128];
+    (void)snprintf(status, sizeof(status), "%s / %s", pose_name(kitty->pose),
+                   paused ? "paused" : (growing ? "growing, then settling in" : pose_mood(kitty->pose)));
+    style(cfg, paused ? CKCLR_ACCENT : CKCLR_GRAY, paused);
+    text_at(height - 2, 2, width - 4, status);
+    if (!narrow) {
+        char meta[48];
+        (void)snprintf(meta, sizeof(meta), "seed %u", (unsigned)seed);
+        int meta_x = width - (int)strlen(meta) - 2;
+        if (meta_x > 2 + (int)strlen(status) + 2) {
+            style(cfg, CKCLR_GRAY, 0);
+            text_at(height - 2, meta_x, (int)strlen(meta), meta);
         }
     }
+    style(cfg, CKCLR_ACCENT, 0);
+    const char* hints = width >= 78 ? "space pose   n new   p pause   t palette   h hide   ? help   q quit" :
+                        width >= 42 ? "space pose  p pause  ? help  q quit" : "? help  q quit";
+    text_at(height - 1, 2, width - 4, hints);
 }
 
-static void draw_compact_notice(int width, int height, const Config* cfg) {
-    if (!cfg || width <= 0 || height <= 0) return;
-    int color_on = cfg->colors && !cfg->ascii;
-    if (color_on) attron(COLOR_PAIR(CKCLR_ACCENT) | A_BOLD);
-    else attron(A_BOLD);
-    draw_centered_text(height / 2, width, "make room for kitty");
-    if (color_on) attroff(COLOR_PAIR(CKCLR_ACCENT) | A_BOLD);
-    else attroff(A_BOLD);
-    if (height / 2 + 1 < height) draw_centered_text(height / 2 + 1, width, "resize to continue");
-}
-
-static void pick_anchor(int width, int height, int randomize, ckitty_rng* rng, int* out_cx, int* out_cy) {
-    int cx = width / 2;
-    int cy = height / 2;
-    if (randomize && rng) {
-        int cx_min = 12;
-        int cx_max = width - 13;
-        int cy_min = 6;
-        int cy_max = height - 9;
-        if (cx_max < cx_min) cx_min = cx_max = width / 2;
-        if (cy_max < cy_min) cy_min = cy_max = height / 2;
-        cx = cx_min + ckitty_rng_range(rng, cx_max - cx_min + 1);
-        cy = cy_min + ckitty_rng_range(rng, cy_max - cy_min + 1);
+static void draw_ambient(const Stage* stage, const Config* cfg, uint32_t seed, uint64_t frame) {
+    int span = stage->right - stage->left - 4;
+    int sky = (stage->bottom - stage->top) / 2;
+    if (stage->small || span <= 0 || sky <= 0) return;
+    for (uint32_t i = 0; i < 7U; i++) {
+        uint32_t value = seed ^ (0x9e3779b9U * (i + 1U));
+        value ^= value >> 16;
+        int x = stage->left + 2 + (int)(value % (uint32_t)span);
+        int y = stage->top + (int)((value >> 8) % (uint32_t)sky);
+        int bright = (frame / 24ULL + i * 5U) % 13ULL == 0;
+        style(cfg, bright ? CKCLR_ACCENT : CKCLR_GROUND, 0);
+        (void)mvaddch(y, x, bright ? '+' : '.');
     }
-    *out_cx = cx;
-    *out_cy = cy;
+}
+
+static void draw_small_kitty(int width, int height, const Config* cfg,
+                            ckitty_pose pose, uint64_t frame) {
+    style(cfg, CKCLR_FUR, 1);
+    if (width < 20 || height < 8) {
+        centered(height / 2, width, "make room for kitty");
+        style(cfg, CKCLR_GRAY, 0);
+        if (height / 2 + 1 < height) centered(height / 2 + 1, width, "resize to continue");
+        return;
+    }
+    int y = height / 2 - 1;
+    int x = (width - 7) / 2;
+    centered(y, width, " /\\_/\\ ");
+    style(cfg, CKCLR_PAW, 0);
+    text_at(y + 1, x, 7, pose == CKPOSE_SLEEP || frame % 100ULL < 3ULL ?
+            "( -.- )" : "( o.o )");
+    if (pose == CKPOSE_SLEEP) text_at(y + 1, x + 8, 1, "z");
+    style(cfg, CKCLR_FUR, 0);
+    centered(y + 2, width, pose == CKPOSE_PLAY ? " / > @ " : " (___)~");
+}
+
+static void draw_help(int width, int height, const Config* cfg) {
+    if (width < 20 || height < 8) {
+        erase();
+        style(cfg, CKCLR_FUR, 1);
+        centered(height / 2 - 1, width, "make yourself at home");
+        style(cfg, CKCLR_GRAY, 0);
+        centered(height / 2, width, "resize for all controls");
+        centered(height / 2 + 1, width, "esc back / q quit");
+        return;
+    }
+    if (width < 44 || height < 17) {
+        static const char* const lines[] = {
+            "space / 1-4 pose", "n new kitty", "p pause / resume",
+            "t palette", "h hide / show UI", "? / esc back", "q quit"
+        };
+        int y = (height - 8) / 2;
+        int x = (width - 16) / 2;
+        erase();
+        style(cfg, CKCLR_FUR, 1);
+        text_at(y, x, 16, "kitty controls");
+        for (int i = 0; i < 7; i++) {
+            style(cfg, i % 2 ? CKCLR_GRAY : CKCLR_PAW, 0);
+            text_at(y + i + 1, x, 16, lines[i]);
+        }
+        return;
+    }
+    int box_w = width >= 58 ? 54 : width - 4;
+    int x = (width - box_w) / 2;
+    int y = (height - 15) / 2;
+    style(cfg, CKCLR_GROUND, 0);
+    for (int row = y; row < y + 15; row++) (void)mvhline(row, x, ' ', box_w);
+    (void)mvhline(y, x, '-', box_w);
+    (void)mvhline(y + 14, x, '-', box_w);
+    style(cfg, CKCLR_FUR, 1);
+    text_at(y + 1, x + 2, box_w - 4, "make yourself at home");
+    static const char* const lines[] = {
+        "space / 1-4   choose a pose", "n             meet a new kitty",
+        "p             pause / resume", "t             change palette",
+        "h             hide / show interface", "?             open / close help",
+        "esc           back, then quit", "q             quit anytime"
+    };
+    for (int i = 0; i < 8; i++) {
+        style(cfg, i % 2 ? CKCLR_GRAY : CKCLR_PAW, 0);
+        text_at(y + 3 + i, x + 2, box_w - 4, lines[i]);
+    }
+    style(cfg, CKCLR_ACCENT, 0);
+    text_at(y + 12, x + 2, box_w - 4, "take your time. kitty is waiting.");
+}
+
+/* Keep the complete animated silhouette inside its stage. Birds are optional
+ * scenery and yield first when a short terminal needs room for the cat. */
+static void place_kitty(ckitty_kitty* kitty, const Stage* stage, int walking_x) {
+    int reach = kitty->pose == CKPOSE_PLAY ? 19 : kitty->pose == CKPOSE_WALK ? 13 : 11;
+    int min_x = stage->left + reach;
+    int max_x = stage->right - reach;
+    kitty->cx = (stage->left + stage->right) / 2 + walking_x;
+    if (min_x <= max_x) {
+        if (kitty->cx < min_x) kitty->cx = min_x;
+        if (kitty->cx > max_x) kitty->cx = max_x;
+    }
+    int depth = kitty->pose == CKPOSE_PLAY ? 5 : kitty->pose == CKPOSE_SLEEP ? 3 : 4;
+    kitty->cy = stage->bottom - depth;
+    int bird_top = kitty->cy + kitty->bird_dy - (kitty->pose == CKPOSE_PLAY ? 7 : 3);
+    if (bird_top < stage->top) kitty->has_bird = 0;
+}
+
+static void draw_scene(const ckitty_canvas* canvas, const Stage* stage,
+                       const Config* cfg, uint64_t frame, const ckitty_kitty* kitty) {
+    style(cfg, CKCLR_GROUND, 0);
+    int shadow_y = kitty->cy + (kitty->pose == CKPOSE_PLAY ? 5 :
+                                kitty->pose == CKPOSE_SLEEP ? 4 : 5);
+    int start = kitty->cx - 9;
+    int end = kitty->cx + 9;
+    for (int x = start; x <= end; x++) {
+        if (x >= stage->left && x <= stage->right) (void)mvaddch(shadow_y, x, x % 2 ? '_' : '.');
+    }
+    int last_color = -1;
+    for (int y = stage->top; y <= stage->bottom; y++) {
+        for (int x = stage->left; x <= stage->right; x++) {
+            char ch = ckitty_canvas_get(canvas, x, y);
+            if (ch == ' ') continue;
+            int color = ckitty_canvas_get_color(canvas, x, y);
+            if (cfg->rainbow) color = (int)((frame / UINT64_C(10) + (uint64_t)x + (uint64_t)y) % UINT64_C(5)) + 1;
+            if (color != last_color) {
+                style(cfg, color, color == CKCLR_PAW);
+                last_color = color;
+            }
+            (void)mvaddch(y, x, (chtype)(unsigned char)ch);
+        }
+    }
 }
 
 static int prepare_live(const ckitty_kitty* kitty, ckitty_canvas* full, ckitty_draw_order* order) {
@@ -370,21 +433,19 @@ static int resize_live_canvases(ckitty_canvas* full, ckitty_canvas* visible, int
 }
 
 static int rebuild_live(const ckitty_kitty* kitty, ckitty_canvas* full, ckitty_draw_order* order,
-                        int* visible, int* grown) {
-    if (!kitty || !full || !order || !visible || !grown) return 0;
+                        double* progress, int* grown, int restart) {
+    if (!kitty || !full || !order || !progress || !grown) return 0;
     ckitty_draw_order_free(order);
     if (!prepare_live(kitty, full, order)) return 0;
-    *visible = 0;
-    *grown = 0;
+    if (restart) {
+        *progress = 0;
+        *grown = 0;
+    }
     return 1;
 }
 
-static void choose_kitty(ckitty_kitty* kitty, ckitty_rng* rng, int width, int height,
-                         int randomize, int pose_override) {
-    int cx = 0;
-    int cy = 0;
-    pick_anchor(width, height, randomize, rng, &cx, &cy);
-    ckitty_kitty_randomize(kitty, rng, cx, cy);
+static void choose_kitty(ckitty_kitty* kitty, ckitty_rng* rng, int pose_override) {
+    ckitty_kitty_randomize(kitty, rng, 0, 0);
     if (pose_override >= 0) kitty->pose = (ckitty_pose)pose_override;
 }
 
@@ -397,7 +458,6 @@ int main(int argc, char* argv[]) {
         .ascii = getenv("NO_COLOR") != NULL,
         .rainbow = 0,
         .screensaver = 0,
-        .infinite = 1,
         .has_seed = 0,
         .seed = 0,
         .message = NULL,
@@ -405,6 +465,8 @@ int main(int argc, char* argv[]) {
         .dump_w = 80,
         .dump_h = 24,
         .dump_frame = 0,
+        .theme = 0,
+        .quiet = 0,
         .pose_override = -1
     };
 
@@ -413,7 +475,9 @@ int main(int argc, char* argv[]) {
         OPT_WIDTH,
         OPT_HEIGHT,
         OPT_FRAME,
-        OPT_VERSION
+        OPT_VERSION,
+        OPT_THEME,
+        OPT_QUIET
     };
     static const struct option long_opts[] = {
         {"help", no_argument, 0, 'h'},
@@ -433,12 +497,14 @@ int main(int argc, char* argv[]) {
         {"height", required_argument, 0, OPT_HEIGHT},
         {"frame", required_argument, 0, OPT_FRAME},
         {"version", no_argument, 0, OPT_VERSION},
+        {"theme", required_argument, 0, OPT_THEME},
+        {"quiet", no_argument, 0, OPT_QUIET},
         {0, 0, 0, 0}
     };
 
     opterr = 0;
     int opt;
-    while ((opt = getopt_long(argc, argv, "hcarlSi:s:d:g:p:m:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hcarlSis:d:g:p:m:", long_opts, NULL)) != -1) {
         switch (opt) {
             case 'h':
                 print_usage(stdout);
@@ -458,10 +524,8 @@ int main(int argc, char* argv[]) {
                 break;
             case 'S':
                 cfg.screensaver = 1;
-                cfg.infinite = 1;
                 break;
             case 'i':
-                cfg.infinite = 1;
                 break;
             case 's':
                 if (!parse_u32(optarg, &cfg.seed)) {
@@ -514,6 +578,16 @@ int main(int argc, char* argv[]) {
                     fprintf(stderr, "ckitty: invalid frame: %s\n", optarg ? optarg : "(missing)");
                     return 2;
                 }
+                break;
+            case OPT_THEME:
+                cfg.theme = parse_theme(optarg);
+                if (cfg.theme < 0) {
+                    fprintf(stderr, "ckitty: invalid theme: %s (choose amber, moon, or forest)\n", optarg);
+                    return 2;
+                }
+                break;
+            case OPT_QUIET:
+                cfg.quiet = 1;
                 break;
             case OPT_VERSION:
                 printf("ckitty %s\n", CKITTY_VERSION);
@@ -570,6 +644,9 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    /* Keep --dump byte-for-byte stable; the interactive screen needs the
+     * user's character widths before curses initializes its wide renderer. */
+    (void)setlocale(LC_CTYPE, "");
     if (initscr() == NULL) {
         fprintf(stderr, "ckitty: could not initialize the terminal\n");
         return 1;
@@ -578,7 +655,10 @@ int main(int argc, char* argv[]) {
     noecho();
     keypad(stdscr, TRUE);
     curs_set(0);
-    nodelay(stdscr, TRUE);
+    timeout(50);
+#ifdef NCURSES_VERSION
+    set_escdelay(25);
+#endif
 
     int width = 0;
     int height = 0;
@@ -590,7 +670,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (cfg.colors && !cfg.ascii && has_colors()) {
-        if (!init_colors()) {
+        if (start_color() == ERR || !apply_theme(cfg.theme)) {
             cfg.colors = 0;
             cfg.rainbow = 0;
         }
@@ -615,12 +695,17 @@ int main(int argc, char* argv[]) {
     ckitty_rng rng;
     ckitty_rng_seed(&rng, seed);
     ckitty_kitty kitty;
-    choose_kitty(&kitty, &rng, width, height, cfg.screensaver, cfg.pose_override);
+    choose_kitty(&kitty, &rng, cfg.pose_override);
 
     ckitty_draw_order order = {0};
-    int live_visible = 0;
+    /* Store a fraction so layout changes, including zero-cell tiny canvases,
+     * preserve the same reveal progress. Only a new subject starts over. */
+    double live_progress = 0;
     int grown = cfg.live ? 0 : 1;
-    if (cfg.live && !rebuild_live(&kitty, &live_full, &order, &live_visible, &grown)) {
+    Stage stage = stage_layout(width, height, &cfg);
+    ckitty_kitty placed = kitty;
+    place_kitty(&placed, &stage, 0);
+    if (cfg.live && !rebuild_live(&placed, &live_full, &order, &live_progress, &grown, 1)) {
         ckitty_canvas_free(&canvas);
         ckitty_canvas_free(&live_full);
         ckitty_canvas_free(&live_visible_canvas);
@@ -630,112 +715,155 @@ int main(int argc, char* argv[]) {
     }
 
     uint64_t next_spawn = now_ms() + SCREENSAVER_PERIOD_MS;
+    uint64_t next_frame = now_ms();
     uint64_t frame = 0;
+    uint64_t frozen_at = 0;
+    int paused = 0;
+    int help = 0;
+    int walking_x = 0;
+    int rebuild = 0;
+    int restart_reveal = 0;
     int exit_code = 0;
     int running = 1;
+    int first_frame = 1;
+    int redraw = 1;
 
+    /* Input wakes the loop even at very slow animation speeds. Capping the
+     * timeout also lets resize signals be handled while motion is paused. */
     while (running) {
         int new_width = 0;
         int new_height = 0;
         getmaxyx(stdscr, new_height, new_width);
-        if (new_width <= 0 || new_height <= 0) {
-            sleep_us(cfg.delay_us);
-            continue;
-        }
         if (new_width != width || new_height != height) {
             if (!resize_canvas(&canvas, new_width, new_height) ||
                 (cfg.live && !resize_live_canvases(&live_full, &live_visible_canvas,
-                                                     new_width, new_height))) {
+                                                  new_width, new_height))) {
                 exit_code = 1;
                 break;
             }
             width = new_width;
             height = new_height;
-            pick_anchor(width, height, cfg.screensaver, &rng, &kitty.cx, &kitty.cy);
-            if (cfg.live && !rebuild_live(&kitty, &live_full, &order, &live_visible, &grown)) {
-                exit_code = 1;
-                break;
-            }
+            rebuild = 1;
         }
-
-        if (cfg.screensaver && now_ms() >= next_spawn) {
-            choose_kitty(&kitty, &rng, width, height, 1, cfg.pose_override);
+        int was_growing = !stage.small && cfg.live && !grown;
+        stage = stage_layout(width, height, &cfg);
+        uint64_t now = now_ms();
+        int is_growing = !stage.small && cfg.live && !grown;
+        /* Compact kitties are already complete. A layout switch must not
+         * inherit a long deadline from the other animation's timing option. */
+        if (was_growing != is_growing) next_frame = now;
+        int frozen = paused || help || width < 20 || height < 8;
+        if (frozen && !frozen_at) frozen_at = now;
+        if (!frozen && frozen_at) {
+            next_spawn += now - frozen_at;
+            next_frame = now;
+            frozen_at = 0;
+        }
+        if (!frozen && cfg.screensaver && now >= next_spawn) {
+            seed = ckitty_rng_u32(&rng);
+            ckitty_rng_seed(&rng, seed);
+            choose_kitty(&kitty, &rng, cfg.pose_override);
             frame = 0;
-            next_spawn = now_ms() + SCREENSAVER_PERIOD_MS;
-            if (cfg.live && !rebuild_live(&kitty, &live_full, &order, &live_visible, &grown)) {
-                exit_code = 1;
-                break;
-            }
+            first_frame = 1;
+            walking_x = 0;
+            next_spawn = now + SCREENSAVER_PERIOD_MS;
+            next_frame = now;
+            rebuild = 1;
+            restart_reveal = 1;
         }
-
-        erase();
-        draw_topbar(width, &cfg, &kitty, kitty.seed);
-        draw_tagline(width, height, &cfg, cfg.message, frame);
-
-        int compact = width < 34 || height < 12;
-        if (compact) {
-            draw_compact_notice(width, height, &cfg);
-        } else {
-            draw_stage_frame(width, height, &cfg);
-            draw_ground(width, height, &cfg);
-            draw_ambient(width, height, &cfg, kitty.seed, frame);
-
-            const ckitty_canvas* to_draw = &canvas;
-            if (cfg.live && !grown) {
-                int step = order.len / 80 + 1;
-                live_visible += step;
-                if (live_visible >= order.len) {
-                    live_visible = order.len;
-                    grown = 1;
+        int tick = !frozen && now >= next_frame;
+        if (tick && !first_frame) frame++;
+        if (tick || rebuild || redraw) {
+            placed = kitty;
+            place_kitty(&placed, &stage, walking_x);
+            if (rebuild && cfg.live) {
+                if (!rebuild_live(&placed, &live_full, &order, &live_progress, &grown,
+                                  restart_reveal)) {
+                    exit_code = 1;
+                    break;
                 }
+            }
+            rebuild = 0;
+            restart_reveal = 0;
+            if (tick && grown && kitty.pose == CKPOSE_WALK && frame % 3ULL == 0) {
+                int reach = 13;
+                int travel = (stage.right - stage.left) / 2 - reach;
+                if (travel > 0) {
+                    walking_x += kitty.facing;
+                    if (walking_x >= travel) { walking_x = travel; kitty.facing = -1; }
+                    if (walking_x <= -travel) { walking_x = -travel; kitty.facing = 1; }
+                } else walking_x = 0;
+                placed = kitty;
+                place_kitty(&placed, &stage, walking_x);
+            }
+            const ckitty_canvas* to_draw = &canvas;
+            if (!stage.small && cfg.live && !grown) {
+                if (tick) {
+                    live_progress += order.len > 0 ?
+                        (double)(order.len / 80 + 1) / (double)order.len : 1.0;
+                    if (live_progress >= 1.0) { live_progress = 1.0; grown = 1; }
+                }
+                int live_visible = (int)(live_progress * (double)order.len);
                 ckitty_canvas_copy_visible(&live_full, &order, live_visible, &live_visible_canvas);
                 to_draw = &live_visible_canvas;
-            } else {
-                if (kitty.pose == CKPOSE_WALK && frame % 3ULL == 0) {
-                    int min_cx = 12;
-                    int max_cx = width - 13;
-                    if (max_cx < min_cx) min_cx = max_cx = width / 2;
-                    kitty.cx += kitty.facing;
-                    if (kitty.cx <= min_cx) {
-                        kitty.cx = min_cx;
-                        kitty.facing = 1;
-                    } else if (kitty.cx >= max_cx) {
-                        kitty.cx = max_cx;
-                        kitty.facing = -1;
-                    }
-                }
-                ckitty_render_frame(&kitty, frame, &canvas);
-                to_draw = &canvas;
+            } else if (!stage.small) ckitty_render_frame(&placed, frame, &canvas);
+
+            erase();
+            if (stage.small) draw_small_kitty(width, height, &cfg, kitty.pose, frame);
+            else {
+                draw_ambient(&stage, &cfg, kitty.seed, frame);
+                draw_scene(to_draw, &stage, &cfg, frame, &placed);
             }
-
-            draw_canvas_to_curses(to_draw, &cfg, frame);
+            draw_chrome(width, height, &cfg, &kitty, seed, paused,
+                        !stage.small && cfg.live && !grown);
+            if (help) draw_help(width, height, &cfg);
+            attrset(A_NORMAL);
+            refresh();
+            redraw = 0;
         }
-        draw_footer(width, height, &cfg, &kitty, kitty.seed);
-        refresh();
 
+        if (tick) {
+            first_frame = 0;
+            int delay = !stage.small && cfg.live && !grown ? cfg.grow_delay_us : cfg.delay_us;
+            next_frame = now + ((uint64_t)delay + UINT64_C(999)) / UINT64_C(1000);
+        }
+        uint64_t wait = frozen || next_frame <= now ? 50ULL : next_frame - now;
+        timeout((int)(wait > 50ULL ? 50ULL : wait));
         int input = getch();
-        if (input == 'q' || input == 27) {
-            running = 0;
-        } else if (input == ' ') {
-            kitty.pose = (ckitty_pose)(((int)kitty.pose + 1) % 4);
-            frame = 0;
-            if (cfg.live && !rebuild_live(&kitty, &live_full, &order, &live_visible, &grown)) {
-                exit_code = 1;
-                break;
-            }
-        } else if (input == 'n') {
-            choose_kitty(&kitty, &rng, width, height, cfg.screensaver, cfg.pose_override);
-            frame = 0;
-            next_spawn = now_ms() + SCREENSAVER_PERIOD_MS;
-            if (cfg.live && !rebuild_live(&kitty, &live_full, &order, &live_visible, &grown)) {
-                exit_code = 1;
-                break;
+        redraw = input != ERR;
+        if (input == 'q') running = 0;
+        else if (input == 27) { if (help) help = 0; else running = 0; }
+        else if (input == '?') help = !help;
+        else if (!help) {
+            if (input == 'p') paused = !paused;
+            else if (input == 'h') { cfg.quiet = !cfg.quiet; rebuild = 1; }
+            else if (input == 't') {
+                cfg.theme = (cfg.theme + 1) % THEME_COUNT;
+                if (cfg.colors && !apply_theme(cfg.theme)) cfg.colors = 0;
+            } else if (input == ' ' || (input >= '1' && input <= '4')) {
+                kitty.pose = input == ' ' ? (ckitty_pose)(((int)kitty.pose + 1) % 4) :
+                                            (ckitty_pose)(input - '1');
+                frame = 0;
+                first_frame = 1;
+                walking_x = 0;
+                next_frame = now_ms();
+                rebuild = 1;
+                restart_reveal = 1;
+            } else if (input == 'n') {
+                seed = ckitty_rng_u32(&rng);
+                ckitty_rng_seed(&rng, seed);
+                choose_kitty(&kitty, &rng, cfg.pose_override);
+                frame = 0;
+                first_frame = 1;
+                walking_x = 0;
+                uint64_t reset_at = now_ms();
+                next_spawn = reset_at + SCREENSAVER_PERIOD_MS;
+                if (frozen_at) frozen_at = reset_at;
+                next_frame = reset_at;
+                rebuild = 1;
+                restart_reveal = 1;
             }
         }
-
-        if (!cfg.infinite && !cfg.screensaver && frame > 600ULL) running = 0;
-        sleep_us((cfg.live && !grown) ? cfg.grow_delay_us : cfg.delay_us);
-        frame++;
     }
 
     ckitty_draw_order_free(&order);

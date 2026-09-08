@@ -2,12 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include <stdint.h>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 static uint32_t xorshift32(uint32_t* state) {
     // xorshift32: state must be non-zero.
@@ -171,180 +166,126 @@ static void put_str(ckitty_canvas* c, int x, int y, const char* s, uint8_t color
     }
 }
 
-static void render_tail(const ckitty_kitty* k, uint64_t frame, ckitty_canvas* c, int base_x, int base_y, int dir) {
-    if (!k || !c) return;
-    int len = (k->tail_len < 1) ? 1 : k->tail_len;
-    double phase = k->tail_phase;
-    double amp = k->tail_amp;
-    double speed = 0.11;
-    int curve_start = (len * 2) / 3;
-    int previous_y = base_y;
-    int wag = (int)((frame / 8ULL) % 3ULL) - 1;
+/* Authored contours keep the ears, cheeks, shoulders, haunches and paws
+ * connected. Seeded expressions and sparse coat marks vary within them. */
+static const char* const sit_shape[] = {
+    "     /\\___/\\",
+    "    ( o   o )",
+    "   =\\   ^   /=",
+    "     )`---'(",
+    "    /  | |  \\",
+    "   (   | |   )__",
+    "    \\__|_|__/   )",
+    "     (__)(__)-'",
+};
 
-    for (int i = 0; i < len; i++) {
-        double t = (len <= 1) ? 0.0 : ((double)i / (double)(len - 1));
-        double sway = sin((double)frame * speed + phase + t * 2.2) * amp * 0.55;
-        int x = base_x + dir * i;
-        int y = base_y + wag + (int)lrint(sway);
-        if (i >= curve_start) {
-            // Keep the path connected so the tail reads as a gesture, not dots.
-            int hook = i - curve_start + 1;
-            y -= (hook + 1) / 2;
+static const char* const sleep_shape[] = {
+    "    /\\___/\\",
+    "   ( -   - )____",
+    "  =\\   ^   /    `.",
+    "    `-----' /      \\",
+    "   (_______/   __  )",
+    "    \\        (  )/",
+    "     `-.___..'--'",
+};
+
+static const char* const play_shape[] = {
+    " __      _..---.._",
+    "(  `-._.'        /\\___/\\",
+    " `-.            ( o   o )",
+    "    )     __   =\\   ^   /=",
+    "   (    .'  `-.  `-----'\\",
+    "    \\  (      `----(_____)",
+    "     \\__)        (____)",
+};
+
+static const char* const walk_shape[] = {
+    "  __     _..---.._",
+    " (  \\_.-'       /\\___/\\",
+    "  \\            ( o   o )",
+    "   )   .----. =\\   ^   /=",
+    "  /   /     /   `-----'\\",
+    " (   /    _/   /   \\   )",
+    "  \\__)   (____/    (___/",
+};
+
+
+static char mirrored_char(char ch) {
+    switch (ch) {
+        case '/': return '\\';
+        case '\\': return '/';
+        case '(': return ')';
+        case ')': return '(';
+        case '`': return '\'';
+        case '\'': return '`';
+        default: return ch;
+    }
+}
+
+static void sprite_put(const ckitty_kitty* k, ckitty_canvas* c, int width,
+                       int top, int x, int y, char ch, uint8_t color) {
+    if (k->facing < 0) {
+        x = width - 1 - x;
+        ch = mirrored_char(ch);
+    }
+    put(c, k->cx - width / 2 + x, top + y, ch, color);
+}
+
+static void render_shape(const ckitty_kitty* k, uint64_t frame, ckitty_canvas* c,
+                         const char* const* rows, int height, int top) {
+    int width = 0;
+    for (int y = 0; y < height; y++) {
+        int length = (int)strlen(rows[y]);
+        if (length > width) width = length;
+    }
+    int blink_period = 90 + (int)(k->seed % 60U);
+    uint64_t blink = frame % (uint64_t)blink_period;
+    char eye = (k->pose == CKPOSE_SLEEP || blink == 1 || blink == 2) ? '-' :
+               k->eye_style == 1 ? 'O' : 'o';
+    int twitch = frame % (uint64_t)(50 + k->seed % 40U) < 4;
+    uint64_t tail_phase = (frame / 18U) % 2U;
+
+    for (int y = 0; y < height; y++) {
+        const char* line = rows[y];
+        /* Short, alternating paw placements give the low walk a soft step. */
+        if (k->pose == CKPOSE_WALK && (frame / 10U) % 2U) {
+            if (y == height - 2) line = " (   /     \\  /    /  )";
+            if (y == height - 1) line = "  \\___)    (__)   (___/";
         }
-        if (y > previous_y + 1) y = previous_y + 1;
-        if (y < previous_y - 1) y = previous_y - 1;
-
-        char ch = '~';
-        if (i == 0) ch = (dir > 0) ? '/' : '\\';
-        else if (y != previous_y) ch = (dir > 0) ? '\\' : '/';
-        else if (t > 0.88) ch = '.';
-
-        put(c, x, y, ch, CKCLR_FUR);
-        previous_y = y;
-    }
-}
-
-static char open_eye_char(int eye_style) {
-    switch (eye_style % 3) {
-        case 0:
-            return 'o';
-        case 1:
-            return 'O';
-        default:
-            return '.';
-    }
-}
-
-static char mouth_char(int mouth_style) {
-    switch (mouth_style % 3) {
-        case 0:
-            return 'w';
-        case 1:
-            return '3';
-        default:
-            return 'v';
-    }
-}
-
-static int eye_state(const ckitty_kitty* k, uint64_t frame) {
-    if (!k) return 0;
-    if (k->pose == CKPOSE_SLEEP) return 2;  // sleep
-
-    // Blink rarely and deterministically per kitty.
-    int base = 90 + (int)(k->seed % 60u);  // 90..149
-    int t = (base > 0) ? (int)(frame % (uint64_t)base) : 0;
-    return (t == 1 || t == 2) ? 1 : 0;  // 1=blink, 0=open
-}
-
-static int whisker_twitch(const ckitty_kitty* k, uint64_t frame) {
-    if (!k) return 0;
-    int period = 50 + (int)(k->seed % 40u);  // 50..89
-    int t = (period > 0) ? (int)(frame % (uint64_t)period) : 0;
-    return (t > 0 && t < 5) ? 1 : 0;
-}
-
-static void render_head(const ckitty_kitty* k, uint64_t frame, ckitty_canvas* c, int x0, int y0) {
-    int es = eye_state(k, frame);
-    char eye_l = open_eye_char(k->eye_style);
-    char eye_r = eye_l;
-    if (es == 1) {
-        eye_l = '-';
-        eye_r = '-';
-    } else if (es == 2) {
-        eye_l = '^';
-        eye_r = '^';
-    }
-
-    char mouth = mouth_char(k->mouth_style);
-
-    // Ears / top.
-    put_str(c, x0, y0, " /\\_/\\ ", CKCLR_FUR);
-
-    // Face: "( o.o )". Symmetry makes the tiny face read at a glance.
-    put(c, x0 + 0, y0 + 1, '(', CKCLR_FUR);
-    put(c, x0 + 1, y0 + 1, ' ', CKCLR_FUR);
-    put(c, x0 + 2, y0 + 1, eye_l, CKCLR_PAW);
-    put(c, x0 + 3, y0 + 1, '.', CKCLR_NOSE);
-    put(c, x0 + 4, y0 + 1, eye_r, CKCLR_PAW);
-    put(c, x0 + 5, y0 + 1, ' ', CKCLR_FUR);
-    put(c, x0 + 6, y0 + 1, ')', CKCLR_FUR);
-
-    // Mouth: " > w < "
-    put(c, x0 + 0, y0 + 2, ' ', CKCLR_FUR);
-    put(c, x0 + 1, y0 + 2, '>', CKCLR_PAW);
-    put(c, x0 + 2, y0 + 2, ' ', CKCLR_FUR);
-    put(c, x0 + 3, y0 + 2, mouth, CKCLR_NOSE);
-    put(c, x0 + 4, y0 + 2, ' ', CKCLR_FUR);
-    put(c, x0 + 5, y0 + 2, '<', CKCLR_PAW);
-    put(c, x0 + 6, y0 + 2, ' ', CKCLR_FUR);
-
-    // Whiskers (animated): two gently staggered rows read more naturally
-    // than one long bar and stay legible when the face is near an edge.
-    int wt = whisker_twitch(k, frame);
-    int wy = y0 + 1 + (wt ? 1 : 0);
-    put(c, x0 - 3, wy, '-', CKCLR_GRAY);
-    put(c, x0 - 2, wy, '-', CKCLR_GRAY);
-    put(c, x0 + 7, wy, '-', CKCLR_GRAY);
-    put(c, x0 + 8, wy, '-', CKCLR_GRAY);
-    put(c, x0 - 2, wy + 1, '-', CKCLR_GRAY);
-    put(c, x0 - 1, wy + 1, '-', CKCLR_GRAY);
-    put(c, x0 + 7, wy + 1, '-', CKCLR_GRAY);
-    put(c, x0 + 8, wy + 1, '-', CKCLR_GRAY);
-}
-
-static void render_body_box(const ckitty_kitty* k, ckitty_canvas* c, int x0, int y0, ckitty_rng* rng) {
-    int w = (k->body_w < 9) ? 9 : k->body_w;
-    int h = (k->body_h < 3) ? 3 : k->body_h;
-
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            char ch = ' ';
-            if (y == 0) {
-                if (x == 0 || x == w - 1) ch = '.';
-                else if (x == 1 || x == w - 2) ch = '-';
-                else ch = '~';
-            } else if (y == h - 1) {
-                if (x == 0) ch = '\\';
-                else if (x == w - 1) ch = '/';
-                else ch = '_';
-            } else if (x == 0) ch = '|';
-            else if (x == w - 1) ch = '|';
-            else {
-                // Stable fur fill.
-                if (ckitty_rng_percent(rng) < k->fur_density) {
-                    ch = (ckitty_rng_range(rng, 2) == 0) ? k->fur_a : k->fur_b;
-                } else {
-                    // Still advance RNG consistently across frames.
-                    (void)ckitty_rng_u32(rng);
-                }
+        for (int x = 0; line[x]; x++) {
+            char ch = line[x];
+            if (ch == ' ') continue;
+            uint8_t color = CKCLR_FUR;
+            if (ch == 'o') { ch = eye; color = CKCLR_PAW; }
+            else if (ch == '^') color = CKCLR_NOSE;
+            else if (ch == '=') { ch = twitch ? '-' : '='; color = CKCLR_GRAY; }
+            else if (k->pose == CKPOSE_SIT && ch == '|') color = CKCLR_PAW;
+            else if ((k->pose == CKPOSE_SIT && y == height - 1 && x >= 5 && x < 13) ||
+                     (k->pose == CKPOSE_SLEEP && y == 4 && x < 11) ||
+                     (k->pose == CKPOSE_PLAY && y >= height - 2 && x >= 17) ||
+                     (k->pose == CKPOSE_WALK && y == height - 1)) color = CKCLR_PAW;
+            if (tail_phase && ((k->pose == CKPOSE_SIT && y == height - 1 && ch == '\'') ||
+                               (k->pose == CKPOSE_SLEEP && y == height - 1 && ch == '\'') ||
+                               ((k->pose == CKPOSE_PLAY || k->pose == CKPOSE_WALK) && y < 2 && ch == '`'))) {
+                ch = ch == '\'' ? '`' : '\'';
             }
-            if (ch != ' ') put(c, x0 + x, y0 + y, ch, CKCLR_FUR);
+            sprite_put(k, c, width, top, x, y, ch, color);
         }
     }
-}
 
-static void render_paws(ckitty_canvas* c, int x_left, int x_right, int y) {
-    put_str(c, x_left, y, "(_)", CKCLR_PAW);
-    put_str(c, x_right, y, "(_)", CKCLR_PAW);
-}
-
-static void render_yarn_ball(ckitty_canvas* c, int x, int y) {
-    put(c, x - 1, y - 1, '/', CKCLR_TOY);
-    put(c, x, y - 1, '@', CKCLR_TOY);
-    put(c, x + 1, y - 1, '\\', CKCLR_TOY);
-    put(c, x - 1, y, '@', CKCLR_TOY);
-    put(c, x, y, '@', CKCLR_TOY);
-    put(c, x + 1, y, '@', CKCLR_TOY);
-    put(c, x, y + 1, '@', CKCLR_TOY);
-
-    // string
-    for (int i = 0; i < 5; i++) {
-        put(c, x + 2 + i, y + (i % 2), '~', CKCLR_TOY);
+    /* A pair of quiet tabby marks replaces the old noisy rectangular fill. */
+    if (k->fur_density >= 58) {
+        static const int marks[4][3] = {{5, 11, 5}, {13, 14, 4}, {7, 8, 3}, {5, 6, 3}};
+        int pose = k->pose >= CKPOSE_SIT && k->pose <= CKPOSE_WALK ? (int)k->pose : CKPOSE_WALK;
+        for (int i = 0; i < 2; i++) {
+            int x = marks[pose][i];
+            int y = marks[pose][2];
+            int actual_x = k->cx - width / 2 + (k->facing < 0 ? width - 1 - x : x);
+            if (ckitty_canvas_get(c, actual_x, top + y) == ' ') {
+                sprite_put(k, c, width, top, x, y, k->fur_a == '.' ? '.' : '\'', CKCLR_FUR);
+            }
+        }
     }
-}
-
-static void render_mouse(ckitty_canvas* c, int x, int y) {
-    put_str(c, x, y, "<:3~~", CKCLR_GRAY);
 }
 
 static void render_bird(ckitty_canvas* c, int x, int y) {
@@ -352,163 +293,35 @@ static void render_bird(ckitty_canvas* c, int x, int y) {
 }
 
 static void render_sitting(const ckitty_kitty* k, uint64_t frame, ckitty_canvas* c) {
-    ckitty_rng rng;
-    ckitty_rng_seed(&rng, k->seed ^ 0x9e3779b9u);
-
-    int body_w = (k->body_w < 9) ? 9 : k->body_w;
-    int body_h = (k->body_h < 3) ? 3 : k->body_h;
-
-    int body_x0 = k->cx - body_w / 2;
-    int body_y0 = k->cy;
-
-    // Tail behind the body (back side).
-    int base_x = (k->facing > 0) ? (body_x0 - 1) : (body_x0 + body_w);
-    int base_y = body_y0 + body_h - 1;
-    int tail_dir = (k->facing > 0) ? -1 : 1;
-    render_tail(k, frame, c, base_x, base_y, tail_dir);
-
-    // Body.
-    render_body_box(k, c, body_x0, body_y0, &rng);
-
-    // Head.
-    int head_x0 = k->cx - 3;
-    int head_y0 = body_y0 - 3;
-    render_head(k, frame, c, head_x0, head_y0);
-
-    // Paws under body.
-    int paws_y = body_y0 + body_h;
-    render_paws(c, body_x0 + 1, body_x0 + body_w - 4, paws_y);
-
-    // Environment.
-    if (k->has_bird) {
-        render_bird(c, k->cx + k->bird_dx, head_y0 + k->bird_dy);
-    }
+    render_shape(k, frame, c, sit_shape, 8, k->cy - 3);
+    if (k->has_bird) render_bird(c, k->cx + k->bird_dx, k->cy - 3 + k->bird_dy);
 }
 
 static void render_sleeping(const ckitty_kitty* k, uint64_t frame, ckitty_canvas* c) {
-    int cx = k->cx;
-    int cy = k->cy;
-
-    // A deliberate curled-up silhouette keeps the sleepy pose readable at a
-    // glance; the fur texture still varies deterministically inside it.
-    ckitty_rng rng;
-    ckitty_rng_seed(&rng, k->seed ^ 0x85ebca6bu);
-    put_str(c, cx - 6, cy, " .-~~~~~~-. ", CKCLR_FUR);
-    put_str(c, cx - 7, cy + 1, "/  .    .  \\", CKCLR_FUR);
-    put_str(c, cx - 6, cy + 2, "\\____  ____/", CKCLR_FUR);
-    put_str(c, cx - 4, cy + 3, "  (____)  ", CKCLR_FUR);
-    for (int i = -3; i <= 3; i++) {
-        if (ckitty_rng_percent(&rng) < 45) {
-            put(c, cx + i, cy + 1, (i % 2 == 0) ? '.' : '~', CKCLR_FUR);
-        }
-    }
-
-    ckitty_kitty face = *k;
-    face.pose = CKPOSE_SLEEP;
-    render_head(&face, frame, c, cx - 3, cy - 3);
-
-    // Z's drift on a slow, deterministic loop.
-    int period = 40 + (int)(k->seed % 20u);
-    int t = (period > 0) ? (int)(frame % (uint64_t)period) : 0;
-    if (t < period / 2) {
-        put(c, cx + 8, cy - 3 - (t / 20), 'z', CKCLR_ACCENT);
-        put(c, cx + 9, cy - 4 - (t / 20), 'Z', CKCLR_ACCENT);
-    }
-
-    if (k->has_bird && frame % 2 == 0) {
-        render_bird(c, cx + k->bird_dx, cy + k->bird_dy - 2);
-    }
+    render_shape(k, frame, c, sleep_shape, 7, k->cy - 3);
+    if (k->has_bird) render_bird(c, k->cx + k->bird_dx, k->cy + k->bird_dy - 2);
 }
 
 static void render_playing(const ckitty_kitty* k, uint64_t frame, ckitty_canvas* c) {
-    ckitty_rng rng;
-    ckitty_rng_seed(&rng, k->seed ^ 0xc2b2ae35u);
-
-    int dir = (k->facing >= 0) ? 1 : -1;
-    int cx = k->cx;
-    int bounce_phase = (int)((frame / 10ULL) % 4ULL);
-    int cy = k->cy + ((bounce_phase == 1) ? 1 : ((bounce_phase == 3) ? -1 : 0));
-
-    // Stretch body: use the same rounded silhouette as the sitting pose so
-    // the character remains a cat while its stance changes.
-    int body_len = 9 + (k->body_w - 7);
-    int body_left = cx - body_len / 2;
-    int body_right = body_left + body_len - 1;
-    ckitty_kitty body = *k;
-    body.body_w = body_len;
-    body.body_h = 3;
-    render_body_box(&body, c, body_left, cy + 1, &rng);
-
-    // Paws up front, reaching toward the toy. Keep them below the face so
-    // the pounce reads as one connected cat instead of face/paw collisions.
-    if (dir > 0) {
-        put_str(c, body_right + 1, cy + 1, "/__\\", CKCLR_PAW);
-        put(c, body_right + 3, cy + 2, '|', CKCLR_PAW);
-    } else {
-        put_str(c, body_left - 4, cy + 1, "\\__/", CKCLR_PAW);
-        put(c, body_left - 3, cy + 2, '|', CKCLR_PAW);
-    }
-
-    // Excited tail behind.
-    int tail_base_x = (dir > 0) ? body_left - 1 : body_right + 1;
-    int tail_base_y = cy + 3;
-    render_tail(k, frame, c, tail_base_x, tail_base_y, -dir);
-
-    // Head at the front.
-    int head_x0 = (dir > 0) ? (body_right - 3) : (body_left - 3);
-    int head_y0 = cy - 2;
-    render_head(k, frame, c, head_x0, head_y0);
-
-    // Toys.
+    int phase = (int)((frame / 18U) % 4U);
+    int bob = phase == 1 ? -1 : phase == 3 ? 1 : 0;
+    render_shape(k, frame, c, play_shape, 7, k->cy - 2 + bob);
+    int dir = k->facing < 0 ? -1 : 1;
+    int toy_y = k->cy + 4;
     if (k->has_yarn) {
-        int yx = (dir > 0) ? (body_right + 11) : (body_left - 11);
-        int toy_bob = ((int)(frame / 12ULL) % 3 == 1) ? -1 : 0;
-        render_yarn_ball(c, yx, cy + 2 + toy_bob);
+        int center = k->cx + dir * 18;
+        put_str(c, center - 1, toy_y, "(@)", CKCLR_TOY);
+        put(c, center - dir * 2, toy_y, '~', CKCLR_TOY);
+        put(c, center - dir * 3, toy_y, '~', CKCLR_TOY);
+    } else if (k->has_mouse) {
+        put_str(c, k->cx + (dir > 0 ? 15 : -19), toy_y, "<:3~~", CKCLR_GRAY);
     }
-    if (k->has_mouse) {
-        int mx = (dir > 0) ? (body_right + 10) : (body_left - 10);
-        render_mouse(c, mx, cy + 3 + ((int)(frame / 12ULL) % 3 == 1 ? -1 : 0));
-    }
-    if (k->has_bird) {
-        render_bird(c, cx + k->bird_dx, cy - 6 + k->bird_dy);
-    }
+    if (k->has_bird) render_bird(c, k->cx + k->bird_dx, k->cy - 6 + k->bird_dy);
 }
 
 static void render_walking(const ckitty_kitty* k, uint64_t frame, ckitty_canvas* c) {
-    ckitty_rng rng;
-    ckitty_rng_seed(&rng, k->seed ^ 0x27d4eb2fu);
-
-    int body_w = (k->body_w < 9) ? 9 : k->body_w;
-    int body_h = (k->body_h < 3) ? 3 : k->body_h;
-
-    int body_x0 = k->cx - body_w / 2;
-    int body_y0 = k->cy;
-
-    // Tail behind.
-    int base_x = (k->facing > 0) ? (body_x0 - 1) : (body_x0 + body_w);
-    int base_y = body_y0 + body_h - 1;
-    int tail_dir = (k->facing > 0) ? -1 : 1;
-    render_tail(k, frame, c, base_x, base_y, tail_dir);
-
-    // Body.
-    render_body_box(k, c, body_x0, body_y0, &rng);
-
-    // Head slightly forward.
-    int head_x0 = (k->facing > 0) ? (k->cx - 2) : (k->cx - 4);
-    int head_y0 = body_y0 - 3;
-    render_head(k, frame, c, head_x0, head_y0);
-
-    // Walking paws alternate.
-    int paws_y = body_y0 + body_h;
-    if ((frame / 8) % 2 == 0) {
-        render_paws(c, body_x0 + 0, body_x0 + body_w - 3, paws_y);
-    } else {
-        render_paws(c, body_x0 + 2, body_x0 + body_w - 5, paws_y);
-    }
-
-    if (k->has_bird && (frame % 3 == 0)) {
-        render_bird(c, k->cx + k->bird_dx, head_y0 + k->bird_dy);
-    }
+    render_shape(k, frame, c, walk_shape, 7, k->cy - 2);
+    if (k->has_bird) render_bird(c, k->cx + k->bird_dx, k->cy - 3 + k->bird_dy);
 }
 
 void ckitty_kitty_randomize(ckitty_kitty* k, ckitty_rng* rng, int cx, int cy) {

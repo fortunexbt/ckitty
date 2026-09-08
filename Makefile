@@ -2,7 +2,13 @@ CC ?= cc
 CPPFLAGS ?=
 CFLAGS ?= -Wall -Wextra -Wpedantic -Wconversion -std=c11
 LDFLAGS ?=
+# macOS exposes wide-character curses through ncurses; Linux ships it as
+# ncursesw in the same development package.
+ifeq ($(shell uname -s),Darwin)
 LDLIBS ?= -lncurses -lm
+else
+LDLIBS ?= -lncursesw -lm
+endif
 PREFIX ?= /usr/local
 
 APP = ckitty
@@ -24,8 +30,9 @@ LDFLAGS += -L$(NCURSES_PREFIX)/lib
 endif
 endif
 
-CFLAGS += $(SANITIZE)
-LDFLAGS += $(SANITIZE)
+# Sanitizer instrumentation must survive caller-supplied build flags.
+override CFLAGS += $(SANITIZE)
+override LDFLAGS += $(SANITIZE)
 
 .PHONY: all check test test-cli test-resize sanitize demo install uninstall clean
 
