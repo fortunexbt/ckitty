@@ -20,7 +20,7 @@
 
 <p align="center"><em>A gallery of <code>--dump</code> frames; the interactive app adds color and controls.</em></p>
 
-ckitty is a small native program that draws procedural ASCII cats directly in your terminal. It has four poses, a gently animated tail, soft ambient twinkles, and enough randomness to feel alive without becoming noisy. A warm amber palette and an unobtrusive interface make it a cozy place to leave your terminal.
+ckitty is a small native program that draws ASCII cats directly in your terminal. Broad faces, rounded haunches, little paired paws, and curled tails give each of its four poses a distinctly feline silhouette. Blinking eyes, soft steps, subtle coat variations, and ambient twinkles keep it alive without becoming noisy. A warm amber palette and an unobtrusive interface make it a cozy place to leave your terminal.
 
 No account. No runtime. No Electron. Just a cat.
 

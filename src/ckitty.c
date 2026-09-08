@@ -225,7 +225,7 @@ typedef struct {
 static Stage stage_layout(int width, int height, const Config* cfg) {
     Stage stage = {2, width - 3, cfg->quiet ? 1 : 5,
                    height - (cfg->quiet ? 2 : 5), 0};
-    stage.small = stage.right - stage.left < 51 || stage.bottom - stage.top < 9;
+    stage.small = stage.right - stage.left < 39 || stage.bottom - stage.top < 9;
     return stage;
 }
 
@@ -362,10 +362,7 @@ static void draw_help(int width, int height, const Config* cfg) {
 /* Keep the complete animated silhouette inside its stage. Birds are optional
  * scenery and yield first when a short terminal needs room for the cat. */
 static void place_kitty(ckitty_kitty* kitty, const Stage* stage, int walking_x) {
-    int body_h = kitty->body_h < 3 ? 3 : kitty->body_h;
-    int reach = kitty->body_w / 2 + kitty->tail_len + 1;
-    if (kitty->pose == CKPOSE_PLAY && reach < 26) reach = 26;
-    if (kitty->pose == CKPOSE_SLEEP) reach = 12;
+    int reach = kitty->pose == CKPOSE_PLAY ? 19 : kitty->pose == CKPOSE_WALK ? 13 : 11;
     int min_x = stage->left + reach;
     int max_x = stage->right - reach;
     kitty->cx = (stage->left + stage->right) / 2 + walking_x;
@@ -373,7 +370,7 @@ static void place_kitty(ckitty_kitty* kitty, const Stage* stage, int walking_x) 
         if (kitty->cx < min_x) kitty->cx = min_x;
         if (kitty->cx > max_x) kitty->cx = max_x;
     }
-    int depth = kitty->pose == CKPOSE_PLAY ? 6 : kitty->pose == CKPOSE_SLEEP ? 3 : body_h + 1;
+    int depth = kitty->pose == CKPOSE_PLAY ? 5 : kitty->pose == CKPOSE_SLEEP ? 3 : 4;
     kitty->cy = stage->bottom - depth;
     int bird_top = kitty->cy + kitty->bird_dy - (kitty->pose == CKPOSE_PLAY ? 7 : 3);
     if (bird_top < stage->top) kitty->has_bird = 0;
@@ -383,7 +380,7 @@ static void draw_scene(const ckitty_canvas* canvas, const Stage* stage,
                        const Config* cfg, uint64_t frame, const ckitty_kitty* kitty) {
     style(cfg, CKCLR_GROUND, 0);
     int shadow_y = kitty->cy + (kitty->pose == CKPOSE_PLAY ? 5 :
-                                kitty->pose == CKPOSE_SLEEP ? 4 : kitty->body_h + 1);
+                                kitty->pose == CKPOSE_SLEEP ? 4 : 5);
     int start = kitty->cx - 9;
     int end = kitty->cx + 9;
     for (int x = start; x <= end; x++) {
@@ -789,7 +786,7 @@ int main(int argc, char* argv[]) {
             rebuild = 0;
             restart_reveal = 0;
             if (tick && grown && kitty.pose == CKPOSE_WALK && frame % 3ULL == 0) {
-                int reach = kitty.body_w / 2 + kitty.tail_len + 1;
+                int reach = 13;
                 int travel = (stage.right - stage.left) / 2 - reach;
                 if (travel > 0) {
                     walking_x += kitty.facing;

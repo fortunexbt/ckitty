@@ -586,9 +586,9 @@ def screensaver_live_restart(binary: str) -> None:
     with Terminal(binary, "--live", "--screensaver", "--grow-delay", "2147483647", "sit") as terminal:
         terminal.expect("seed 123")
         terminal.wait_for(lambda text: "seed 123" not in text, "screensaver did not choose a new kitty", timeout=8.8)
-        # The first new cell for this seed is an underscore. Include it while
-        # excluding the ground row and the optional ambient punctuation.
-        terminal.wait_for(lambda text: any(ch not in " .+" for row in terminal.screen.cells[5:-5] for ch in row),
+        # Include the lowest paw row while excluding the ground row and the
+        # optional ambient punctuation.
+        terminal.wait_for(lambda text: any(ch not in " .+" for row in terminal.screen.cells[5:-4] for ch in row),
                           "screensaver inherited the previous kitty's long reveal deadline", timeout=0.5)
         terminal.quit()
 

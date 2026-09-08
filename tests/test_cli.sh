@@ -21,17 +21,16 @@ for infinite in -i --infinite; do
     compatibility=$("$binary" "$infinite" --dump --seed 123 --pose sit --frame 0)
     [ "$compatibility" = "$first" ]
 done
-printf '%s\n' "$first" | grep -F '(_)' >/dev/null
+printf '%s\n' "$first" | grep -F '/\___/\' >/dev/null
+printf '%s\n' "$first" | grep -F '(__)(__)' >/dev/null
 
 for pose in sit sleep play walk; do
     output=$("$binary" --dump --seed 123 --pose "$pose" --frame 0)
     [ -n "$output" ]
+    printf '%s\n' "$output" | grep -F '/\___/\' >/dev/null
     positional=$("$binary" --dump --seed 123 "$pose" --frame 0)
     [ "$output" = "$positional" ]
 done
-
-play_output=$("$binary" --dump --seed 123 play)
-printf '%s\n' "$play_output" | grep -F '\__/' >/dev/null
 
 frame_zero=$("$binary" --dump --seed 999 --pose sit --frame 0)
 frame_later=$("$binary" --dump --seed 999 --pose sit --frame 40)

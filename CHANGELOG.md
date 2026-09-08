@@ -5,6 +5,7 @@ All notable changes to ckitty are documented here. The project follows
 
 ## Unreleased
 
+- Redraw all four poses with broad feline faces, rounded haunches, paired paws, and short curved tails; lower the walking and playing silhouettes and curl up the sleeping kitty.
 - Add warm amber, moon, and forest palettes with 256-color and eight-color support, respecting `--ascii` and `NO_COLOR`.
 - Refine the terminal scene with stable ambient twinkles and a compact interface that adapts to window size.
 - Add direct pose shortcuts, pause/resume, palette cycling, and an in-app help overlay that temporarily pauses the scene.
