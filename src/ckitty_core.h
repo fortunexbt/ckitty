@@ -63,12 +63,12 @@ typedef struct {
     int cy;            // anchor y (terminal coordinates)
 
     // Visual parameters (stable for the kitty).
-    int body_w;        // 7..11
-    int body_h;        // 3..5
+    int body_w;        // randomized to 9, 11, or 13
+    int body_h;        // randomized to 3..4
     int fur_density;   // 0..100
     char fur_a;
     char fur_b;
-    int tail_len;      // 8..20
+    int tail_len;      // randomized to 10..17
     double tail_amp;   // sway amplitude
     double tail_phase; // 0..2pi
 
