@@ -17,7 +17,7 @@
 
 #include "ckitty_core.h"
 
-#define CKITTY_VERSION "1.0.0"
+#define CKITTY_VERSION "1.1.0"
 #define DELAY_DEFAULT_US 40000
 #define GROW_DELAY_DEFAULT_US 60000
 #define MIN_DELAY_US 1000

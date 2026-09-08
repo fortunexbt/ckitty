@@ -12,7 +12,7 @@ printf '%s\n' "$help_output" | grep -F 'Usage: ckitty [POSE] [OPTIONS]' >/dev/nu
 printf '%s\n' "$help_output" | grep -F -- '--dump' >/dev/null
 printf '%s\n' "$help_output" | grep -F -- '--theme' >/dev/null
 printf '%s\n' "$help_output" | grep -F -- '--quiet' >/dev/null
-[ "$("$binary" --version)" = 'ckitty 1.0.0' ]
+[ "$("$binary" --version)" = 'ckitty 1.1.0' ]
 
 first=$("$binary" --dump --seed 123 --pose sit --frame 0)
 second=$("$binary" --dump --seed 123 --pose sit --frame 0)

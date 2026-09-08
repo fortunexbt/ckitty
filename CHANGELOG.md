@@ -3,7 +3,7 @@
 All notable changes to ckitty are documented here. The project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.1.0 — 2026-09-08
 
 - Redraw all four poses with broad feline faces, rounded haunches, paired paws, and short curved tails; lower the walking and playing silhouettes and curl up the sleeping kitty.
 - Add warm amber, moon, and forest palettes with 256-color and eight-color support, respecting `--ascii` and `NO_COLOR`.
