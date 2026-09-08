@@ -297,6 +297,146 @@ static void test_randomize_and_visible_copy(void) {
     ckitty_canvas_free(&visible);
 }
 
+static ckitty_kitty seeded_kitty(uint32_t seed, ckitty_pose pose) {
+    ckitty_rng rng;
+    ckitty_kitty k;
+    ckitty_rng_seed(&rng, seed);
+    ckitty_kitty_randomize(&k, &rng, 50, 20);
+    k.pose = pose;
+    return k;
+}
+
+static void test_play_toys_do_not_overlap(void) {
+    ckitty_canvas both = {0};
+    ckitty_canvas yarn = {0};
+    expect_true(ckitty_canvas_init(&both, 100, 40), "combined toy canvas init");
+    expect_true(ckitty_canvas_init(&yarn, 100, 40), "yarn canvas init");
+    ckitty_kitty k = seeded_kitty(123u, CKPOSE_PLAY);
+    expect_true(k.has_yarn && k.has_mouse, "seed 123 exercises both toys");
+    size_t cells = (size_t)both.w * (size_t)both.h;
+
+    for (int facing = -1; facing <= 1; facing += 2) {
+        k.facing = facing;
+        for (uint64_t frame = 0; frame < 40; frame++) {
+            ckitty_kitty yarn_only = k;
+            yarn_only.has_mouse = 0;
+            ckitty_render_frame(&k, frame, &both);
+            ckitty_render_frame(&yarn_only, frame, &yarn);
+            expect_true(memcmp(both.ch, yarn.ch, cells) == 0,
+                        "yarn takes precedence so a mouse cannot overwrite it");
+            expect_true(memcmp(both.color, yarn.color, cells) == 0,
+                        "mouse cannot recolor the yarn");
+        }
+        ckitty_kitty mouse_only = k;
+        mouse_only.has_yarn = 0;
+        ckitty_render_frame(&mouse_only, 0, &both);
+        char* dump = ckitty_canvas_dump_bbox(&both);
+        expect_str_contains(dump, "<:3~~", "mouse is visible when yarn is absent");
+        free(dump);
+    }
+    ckitty_canvas_free(&both);
+    ckitty_canvas_free(&yarn);
+}
+
+static void test_tail_stays_attached_and_follows_its_slope(void) {
+    ckitty_canvas c = {0};
+    expect_true(ckitty_canvas_init(&c, 100, 40), "tail canvas init");
+    ckitty_kitty k = seeded_kitty(123u, CKPOSE_SIT);
+    k.has_bird = 0;
+    int saw_rising = 0;
+    int saw_falling = 0;
+
+    for (int facing = -1; facing <= 1; facing += 2) {
+        k.facing = facing;
+        int body_x = k.cx - k.body_w / 2;
+        int base_x = (facing > 0) ? body_x - 1 : body_x + k.body_w;
+        int base_y = k.cy + k.body_h - 1;
+        int dir = -facing;
+        for (uint64_t frame = 0; frame < 96; frame++) {
+            ckitty_render_frame(&k, frame, &c);
+            expect_true(ckitty_canvas_get(&c, base_x, base_y) == '~',
+                        "tail root stays smoothly attached at the body edge");
+            int previous_y = base_y;
+            for (int i = 1; i < k.tail_len; i++) {
+                int x = base_x + dir * i;
+                int y = -1;
+                for (int row = 0; row < c.h; row++) {
+                    if (ckitty_canvas_get_color(&c, x, row) == CKCLR_FUR) {
+                        expect_true(y == -1, "tail has one point per column");
+                        y = row;
+                    }
+                }
+                expect_true(y >= 0, "tail path has no missing points");
+                int dy = y - previous_y;
+                expect_true(dy >= -1 && dy <= 1, "tail path stays connected");
+                if (dy != 0) {
+                    char slope = (dy * dir > 0) ? '\\' : '/';
+                    expect_true(ckitty_canvas_get(&c, x, y) == slope,
+                                "tail diagonal follows its signed screen slope");
+                    if (dy < 0) saw_rising = 1;
+                    else saw_falling = 1;
+                }
+                previous_y = y;
+            }
+        }
+    }
+    expect_true(saw_rising && saw_falling, "tail test covers rising and falling motion");
+    ckitty_canvas_free(&c);
+}
+
+static void test_whiskers_stay_on_the_face(void) {
+    ckitty_canvas c = {0};
+    expect_true(ckitty_canvas_init(&c, 100, 40), "whisker canvas init");
+    ckitty_kitty k = seeded_kitty(123u, CKPOSE_SIT);
+    k.has_yarn = k.has_mouse = k.has_bird = 0;
+
+    for (int pose = CKPOSE_SIT; pose <= CKPOSE_WALK; pose++) {
+        k.pose = (ckitty_pose)pose;
+        for (int facing = -1; facing <= 1; facing += 2) {
+            k.facing = facing;
+            for (uint64_t frame = 0; frame < 5; frame++) {
+                ckitty_render_frame(&k, frame, &c);
+                int face_top = k.cy - ((k.pose == CKPOSE_PLAY) ? 1 : 2);
+                int whiskers = 0;
+                for (int y = 0; y < c.h; y++) {
+                    for (int x = 0; x < c.w; x++) {
+                        if (ckitty_canvas_get_color(&c, x, y) == CKCLR_GRAY) {
+                            expect_true(y == face_top || y == face_top + 1,
+                                        "twitching whiskers stay within the two face rows");
+                            whiskers++;
+                        }
+                    }
+                }
+                expect_true(whiskers == 8, "whisker twitch preserves all eight strands");
+            }
+        }
+    }
+    ckitty_canvas_free(&c);
+}
+
+static void test_birds_do_not_strobe(void) {
+    ckitty_canvas c = {0};
+    expect_true(ckitty_canvas_init(&c, 100, 40), "bird canvas init");
+    ckitty_kitty k = seeded_kitty(2u, CKPOSE_SLEEP);
+    expect_true(k.has_bird, "seed 2 exercises the bird");
+
+    const ckitty_pose poses[] = {CKPOSE_SLEEP, CKPOSE_WALK};
+    for (size_t i = 0; i < sizeof(poses) / sizeof(poses[0]); i++) {
+        k.pose = poses[i];
+        int bird_y = k.cy + k.bird_dy - ((k.pose == CKPOSE_SLEEP) ? 2 : 3);
+        for (uint64_t frame = 0; frame < 80; frame++) {
+            ckitty_render_frame(&k, frame, &c);
+            for (int dx = 0; dx < 3; dx++) {
+                expect_true(ckitty_canvas_get(&c, k.cx + k.bird_dx + dx, bird_y) != ' ',
+                            "bird remains present between animation frames");
+                expect_true(ckitty_canvas_get_color(&c, k.cx + k.bird_dx + dx, bird_y) == CKCLR_ACCENT,
+                            "bird keeps its accent color");
+            }
+        }
+    }
+    ckitty_canvas_free(&c);
+}
+
 int main(void) {
     test_rng_and_canvas_contract();
     test_determinism_and_content();
@@ -305,6 +445,10 @@ int main(void) {
     test_small_canvas_safe();
     test_all_poses_and_large_frame();
     test_randomize_and_visible_copy();
+    test_play_toys_do_not_overlap();
+    test_tail_stays_attached_and_follows_its_slope();
+    test_whiskers_stay_on_the_face();
+    test_birds_do_not_strobe();
 
     printf("OK\n");
     return 0;

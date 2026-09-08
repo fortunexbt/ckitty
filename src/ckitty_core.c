@@ -191,13 +191,14 @@ static void render_tail(const ckitty_kitty* k, uint64_t frame, ckitty_canvas* c,
             int hook = i - curve_start + 1;
             y -= (hook + 1) / 2;
         }
+        if (i == 0) y = base_y;
         if (y > previous_y + 1) y = previous_y + 1;
         if (y < previous_y - 1) y = previous_y - 1;
 
+        int dy = y - previous_y;
         char ch = '~';
-        if (i == 0) ch = (dir > 0) ? '/' : '\\';
-        else if (y != previous_y) ch = (dir > 0) ? '\\' : '/';
-        else if (t > 0.88) ch = '.';
+        if (dy != 0) ch = (dy * dir > 0) ? '\\' : '/';
+        else if (i > 0 && t > 0.88) ch = '.';
 
         put(c, x, y, ch, CKCLR_FUR);
         previous_y = y;
@@ -278,18 +279,18 @@ static void render_head(const ckitty_kitty* k, uint64_t frame, ckitty_canvas* c,
     put(c, x0 + 5, y0 + 2, '<', CKCLR_PAW);
     put(c, x0 + 6, y0 + 2, ' ', CKCLR_FUR);
 
-    // Whiskers (animated): two gently staggered rows read more naturally
-    // than one long bar and stay legible when the face is near an edge.
+    // A twitch swaps the staggered rows within the face, never onto the body.
     int wt = whisker_twitch(k, frame);
-    int wy = y0 + 1 + (wt ? 1 : 0);
+    int wy = y0 + 1 + wt;
+    int other_wy = y0 + 2 - wt;
     put(c, x0 - 3, wy, '-', CKCLR_GRAY);
     put(c, x0 - 2, wy, '-', CKCLR_GRAY);
     put(c, x0 + 7, wy, '-', CKCLR_GRAY);
     put(c, x0 + 8, wy, '-', CKCLR_GRAY);
-    put(c, x0 - 2, wy + 1, '-', CKCLR_GRAY);
-    put(c, x0 - 1, wy + 1, '-', CKCLR_GRAY);
-    put(c, x0 + 7, wy + 1, '-', CKCLR_GRAY);
-    put(c, x0 + 8, wy + 1, '-', CKCLR_GRAY);
+    put(c, x0 - 2, other_wy, '-', CKCLR_GRAY);
+    put(c, x0 - 1, other_wy, '-', CKCLR_GRAY);
+    put(c, x0 + 7, other_wy, '-', CKCLR_GRAY);
+    put(c, x0 + 8, other_wy, '-', CKCLR_GRAY);
 }
 
 static void render_body_box(const ckitty_kitty* k, ckitty_canvas* c, int x0, int y0, ckitty_rng* rng) {
@@ -415,7 +416,7 @@ static void render_sleeping(const ckitty_kitty* k, uint64_t frame, ckitty_canvas
         put(c, cx + 9, cy - 4 - (t / 20), 'Z', CKCLR_ACCENT);
     }
 
-    if (k->has_bird && frame % 2 == 0) {
+    if (k->has_bird) {
         render_bird(c, cx + k->bird_dx, cy + k->bird_dy - 2);
     }
 }
@@ -459,13 +460,12 @@ static void render_playing(const ckitty_kitty* k, uint64_t frame, ckitty_canvas*
     int head_y0 = cy - 2;
     render_head(k, frame, c, head_x0, head_y0);
 
-    // Toys.
+    // One toy at a time keeps the ball and mouse silhouettes distinct.
     if (k->has_yarn) {
         int yx = (dir > 0) ? (body_right + 11) : (body_left - 11);
         int toy_bob = ((int)(frame / 12ULL) % 3 == 1) ? -1 : 0;
         render_yarn_ball(c, yx, cy + 2 + toy_bob);
-    }
-    if (k->has_mouse) {
+    } else if (k->has_mouse) {
         int mx = (dir > 0) ? (body_right + 10) : (body_left - 10);
         render_mouse(c, mx, cy + 3 + ((int)(frame / 12ULL) % 3 == 1 ? -1 : 0));
     }
@@ -506,7 +506,7 @@ static void render_walking(const ckitty_kitty* k, uint64_t frame, ckitty_canvas*
         render_paws(c, body_x0 + 2, body_x0 + body_w - 5, paws_y);
     }
 
-    if (k->has_bird && (frame % 3 == 0)) {
+    if (k->has_bird) {
         render_bird(c, k->cx + k->bird_dx, head_y0 + k->bird_dy);
     }
 }
