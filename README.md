@@ -80,7 +80,9 @@ esc           close help, or quit when help is closed
 q             quit from anywhere
 ```
 
-Pause freezes motion, the piece-by-piece reveal, and screensaver movement. The layout adapts to smaller terminals and redraws safely on resize; very small windows get a friendly resize message. Palettes use 256 colors when available and fall back to eight colors. `--ascii` and `NO_COLOR=1` disable color, and terminals without color support stay readable.
+Pause freezes motion, the piece-by-piece reveal, and screensaver movement. The layout and help adapt to smaller terminals and redraw safely on resize; very small windows get a friendly resize message. Palettes use 256 colors when available and fall back to eight colors. `--ascii` and `NO_COLOR=1` disable color, and terminals without color support stay readable.
+
+Messages support Unicode in a UTF-8 locale, including wide characters and combining accents. Long messages stop at the edge of their row.
 
 ## A deterministic kitty
 
@@ -96,7 +98,7 @@ Most people never need the rest of the options. If you do, `ckitty --help` has t
 
 ## Build it yourself
 
-Requirements: a C11 compiler, ncurses, and libm.
+Requirements: a C11 compiler, wide-character ncurses, and libm. The build uses `ncursesw` on Linux and `ncurses` on macOS; the packages below provide the required support.
 
 ```sh
 make

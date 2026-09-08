@@ -1,10 +1,11 @@
-#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
 
 #include <ncurses.h>
 
 #include <errno.h>
 #include <getopt.h>
 #include <limits.h>
+#include <locale.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+#include <wchar.h>
 
 #include "ckitty_core.h"
 
@@ -173,20 +175,28 @@ static void style(const Config* cfg, int color, int bold) {
 static void text_at(int y, int x, int limit, const char* text) {
     if (!text || limit <= 0 || y < 0 || y >= LINES || x < 0 || x >= COLS) return;
     if (limit > COLS - x) limit = COLS - x;
-    int length = (int)strnlen(text, (size_t)limit);
-    /* A byte limit must not leave part of a UTF-8 character on the screen. */
-    if (length == limit) {
-        while (length > 0 && ((unsigned char)text[length] & 0xc0U) == 0x80U) length--;
-    }
     (void)move(y, x);
-    int start = 0;
-    for (int i = 0; i <= length; i++) {
-        unsigned char ch = (unsigned char)text[i];
-        if (i == length || ch < 0x20U || ch == 0x7fU) {
-            if (i > start) (void)addnstr(text + start, i - start);
-            if (i < length) (void)addch(' ');
-            start = i + 1;
+    mbstate_t state = {0};
+    size_t remaining = strlen(text);
+    int columns = 0;
+    while (remaining > 0) {
+        wchar_t ch;
+        size_t bytes = mbrtowc(&ch, text, remaining, &state);
+        if (bytes == (size_t)-1 || bytes == (size_t)-2) {
+            /* Invalid input or a non-UTF-8 locale still gets safe, bounded text. */
+            state = (mbstate_t){0};
+            bytes = 1;
+            ch = L'?';
         }
+        if (bytes == 0) break;
+        int cells = wcwidth(ch);
+        if (cells < 0) { ch = L' '; cells = 1; }
+        if (columns + cells > limit) break;
+        /* A leading combining mark must not attach to an unrelated UI cell. */
+        if (cells > 0 || columns > 0) (void)addnwstr(&ch, 1);
+        columns += cells;
+        text += bytes;
+        remaining -= bytes;
     }
 }
 
@@ -290,22 +300,40 @@ static void draw_small_kitty(int width, int height, const Config* cfg,
         return;
     }
     int y = height / 2 - 1;
+    int x = (width - 7) / 2;
     centered(y, width, " /\\_/\\ ");
     style(cfg, CKCLR_PAW, 0);
-    centered(y + 1, width, pose == CKPOSE_SLEEP ? "( -.- ) z" :
-             frame % 100ULL < 3ULL ? "( -.- )" : "( o.o )");
+    text_at(y + 1, x, 7, pose == CKPOSE_SLEEP || frame % 100ULL < 3ULL ?
+            "( -.- )" : "( o.o )");
+    if (pose == CKPOSE_SLEEP) text_at(y + 1, x + 8, 1, "z");
     style(cfg, CKCLR_FUR, 0);
     centered(y + 2, width, pose == CKPOSE_PLAY ? " / > @ " : " (___)~");
 }
 
 static void draw_help(int width, int height, const Config* cfg) {
-    if (width < 38 || height < 17) {
+    if (width < 20 || height < 8) {
         erase();
         style(cfg, CKCLR_FUR, 1);
         centered(height / 2 - 1, width, "make yourself at home");
         style(cfg, CKCLR_GRAY, 0);
         centered(height / 2, width, "resize for all controls");
         centered(height / 2 + 1, width, "esc back / q quit");
+        return;
+    }
+    if (width < 44 || height < 17) {
+        static const char* const lines[] = {
+            "space / 1-4 pose", "n new kitty", "p pause / resume",
+            "t palette", "h hide / show UI", "? / esc back", "q quit"
+        };
+        int y = (height - 8) / 2;
+        int x = (width - 16) / 2;
+        erase();
+        style(cfg, CKCLR_FUR, 1);
+        text_at(y, x, 16, "kitty controls");
+        for (int i = 0; i < 7; i++) {
+            style(cfg, i % 2 ? CKCLR_GRAY : CKCLR_PAW, 0);
+            text_at(y + i + 1, x, 16, lines[i]);
+        }
         return;
     }
     int box_w = width >= 58 ? 54 : width - 4;
@@ -367,7 +395,7 @@ static void draw_scene(const ckitty_canvas* canvas, const Stage* stage,
             char ch = ckitty_canvas_get(canvas, x, y);
             if (ch == ' ') continue;
             int color = ckitty_canvas_get_color(canvas, x, y);
-            if (cfg->rainbow) color = (int)((frame / 10ULL + (uint64_t)x + (uint64_t)y) % 5ULL) + 1;
+            if (cfg->rainbow) color = (int)((frame / UINT64_C(10) + (uint64_t)x + (uint64_t)y) % UINT64_C(5)) + 1;
             if (color != last_color) {
                 style(cfg, color, color == CKCLR_PAW);
                 last_color = color;
@@ -479,7 +507,7 @@ int main(int argc, char* argv[]) {
 
     opterr = 0;
     int opt;
-    while ((opt = getopt_long(argc, argv, "hcarlSi:s:d:g:p:m:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hcarlSis:d:g:p:m:", long_opts, NULL)) != -1) {
         switch (opt) {
             case 'h':
                 print_usage(stdout);
@@ -619,6 +647,9 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    /* Keep --dump byte-for-byte stable; the interactive screen needs the
+     * user's character widths before curses initializes its wide renderer. */
+    (void)setlocale(LC_CTYPE, "");
     if (initscr() == NULL) {
         fprintf(stderr, "ckitty: could not initialize the terminal\n");
         return 1;
@@ -717,8 +748,13 @@ int main(int argc, char* argv[]) {
             height = new_height;
             rebuild = 1;
         }
+        int was_growing = !stage.small && cfg.live && !grown;
         stage = stage_layout(width, height, &cfg);
         uint64_t now = now_ms();
+        int is_growing = !stage.small && cfg.live && !grown;
+        /* Compact kitties are already complete. A layout switch must not
+         * inherit a long deadline from the other animation's timing option. */
+        if (was_growing != is_growing) next_frame = now;
         int frozen = paused || help || width < 20 || height < 8;
         if (frozen && !frozen_at) frozen_at = now;
         if (!frozen && frozen_at) {
@@ -734,6 +770,7 @@ int main(int argc, char* argv[]) {
             first_frame = 1;
             walking_x = 0;
             next_spawn = now + SCREENSAVER_PERIOD_MS;
+            next_frame = now;
             rebuild = 1;
             restart_reveal = 1;
         }
@@ -790,8 +827,8 @@ int main(int argc, char* argv[]) {
 
         if (tick) {
             first_frame = 0;
-            int delay = cfg.live && !grown ? cfg.grow_delay_us : cfg.delay_us;
-            next_frame = now + ((uint64_t)delay + 999ULL) / 1000ULL;
+            int delay = !stage.small && cfg.live && !grown ? cfg.grow_delay_us : cfg.delay_us;
+            next_frame = now + ((uint64_t)delay + UINT64_C(999)) / UINT64_C(1000);
         }
         uint64_t wait = frozen || next_frame <= now ? 50ULL : next_frame - now;
         timeout((int)(wait > 50ULL ? 50ULL : wait));

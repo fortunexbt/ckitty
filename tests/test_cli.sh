@@ -17,6 +17,10 @@ printf '%s\n' "$help_output" | grep -F -- '--quiet' >/dev/null
 first=$("$binary" --dump --seed 123 --pose sit --frame 0)
 second=$("$binary" --dump --seed 123 --pose sit --frame 0)
 [ "$first" = "$second" ]
+for infinite in -i --infinite; do
+    compatibility=$("$binary" "$infinite" --dump --seed 123 --pose sit --frame 0)
+    [ "$compatibility" = "$first" ]
+done
 printf '%s\n' "$first" | grep -F '(_)' >/dev/null
 
 for pose in sit sleep play walk; do

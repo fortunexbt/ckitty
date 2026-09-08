@@ -13,7 +13,8 @@ ckitty --quiet                   # start with the interface hidden
 ckitty --ascii                   # plain, color-free output
 NO_COLOR=1 ckitty                # disable color through the standard convention
 ckitty -l                        # reveal the kitty piece by piece
-ckitty -S -m "back soon"  # screensaver with a message
+ckitty -S -m "back soon"          # screensaver with a message
+ckitty -m "caffè e un gatto 🐱"   # Unicode text in a UTF-8 locale
 ```
 
 Press Space to cycle poses, or choose one directly: `1` for sit, `2` for sleep, `3` for play, and `4` for walk. Press `n` for a new kitty, `t` to cycle amber, moon, and forest palettes, or `h` to hide or show the interface.

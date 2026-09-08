@@ -10,6 +10,9 @@ All notable changes to ckitty are documented here. The project follows
 - Add direct pose shortcuts, pause/resume, palette cycling, and an in-app help overlay that temporarily pauses the scene.
 - Add `--quiet` and an interface visibility toggle for a calmer terminal companion.
 - Preserve deterministic, ANSI-free `--dump` output across themes.
+- Keep tails connected, whiskers clear of the body, toys distinct, and birds visible between animation frames.
+- Fit help into compact panes and keep compact animation and screensaver replacements responsive at slow reveal speeds.
+- Render Unicode messages within their display-column limit, with a safe fallback outside UTF-8 locales.
 
 ## 1.0.0 — 2026-07-16
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import errno
 import fcntl
+import locale
 import os
 import pty
 import re
@@ -19,6 +20,7 @@ import struct
 import sys
 import termios
 import time
+import unicodedata
 
 
 class Screen:
@@ -35,12 +37,24 @@ class Screen:
         self.last_printed = " "
 
     def put(self, character: str) -> None:
+        if unicodedata.combining(character):
+            col = self.x if self.wrap else self.x - 1
+            while col >= 0 and not self.cells[self.y][col]:
+                col -= 1
+            if col >= 0:
+                self.cells[self.y][col] += character
+            return
+        width = 2 if unicodedata.east_asian_width(character) in "WF" else 1
         if self.wrap:
             self.x, self.y = 0, min(self.rows - 1, self.y + 1)
+        if self.x + width > self.cols:
+            self.x, self.y = 0, min(self.rows - 1, self.y + 1)
         self.cells[self.y][self.x] = character
+        if width == 2 and self.x + 1 < self.cols:
+            self.cells[self.y][self.x + 1] = ""
         self.last_printed = character
-        self.wrap = self.x == self.cols - 1
-        self.x = min(self.cols - 1, self.x + 1)
+        self.wrap = self.x + width >= self.cols
+        self.x = min(self.cols - 1, self.x + width)
 
     def scroll(self, start: int, end: int, amount: int, down: bool) -> None:
         amount = min(amount, end - start)
@@ -98,6 +112,14 @@ class Screen:
                 self.x = min(self.cols - 1, (self.x // 8 + 1) * 8)
             elif 32 <= value < 127:
                 self.put(chr(value))
+            elif value >= 128:
+                length = 2 if value < 224 else 3 if value < 240 else 4
+                if i + length > len(data):
+                    break
+                character = data[i:i + length].decode("utf-8", errors="strict")
+                self.put(character)
+                i += length
+                continue
             i += 1
         self.pending = data[i:]
 
@@ -165,20 +187,37 @@ class Screen:
         return "\n".join("".join(row).rstrip() for row in self.cells)
 
 
+def utf8_locale() -> str:
+    previous = locale.setlocale(locale.LC_CTYPE)
+    try:
+        for candidate in ("C.UTF-8", "en_US.UTF-8", "UTF-8"):
+            try:
+                locale.setlocale(locale.LC_CTYPE, candidate)
+                return candidate
+            except locale.Error:
+                pass
+    finally:
+        locale.setlocale(locale.LC_CTYPE, previous)
+    raise AssertionError("PTY tests require a UTF-8 locale")
+
+
 class Terminal:
     def __init__(self, binary: str, *args: str, ascii: bool = True,
-                 no_color: bool = False, term: str = "xterm-256color") -> None:
-        self.screen = Screen(30, 120)
+                 no_color: bool = False, term: str = "xterm-256color",
+                 rows: int = 30, cols: int = 120, locale_name: str | None = None) -> None:
+        self.screen = Screen(rows, cols)
         self.status: int | None = None
         self.transcript = bytearray()
+        locale_name = locale_name or utf8_locale()
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.environ["TERM"] = term
+            os.environ["LC_ALL"] = locale_name
             if no_color:
                 os.environ["NO_COLOR"] = "1"
             else:
                 os.environ.pop("NO_COLOR", None)
-            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
+            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
             flags = ["--ascii"] if ascii else []
             os.execv(binary, [binary, *flags, "--seed", "123", *args])
 
@@ -323,6 +362,32 @@ def quiet_and_slow_controls(binary: str) -> None:
         terminal.quit()
 
 
+def compact_help_and_sleep(binary: str) -> None:
+    with Terminal(binary, "--delay", "2147483647", "sleep") as terminal:
+        terminal.expect("ckitty")
+        for rows, cols in ((8, 20), (12, 38), (17, 38), (17, 44)):
+            terminal.resize(rows, cols)
+            terminal.expect("( -.- )")
+            lines = terminal.screen.text.splitlines()
+            ears = next(line for line in lines if "/\\_/\\" in line)
+            face = next(line for line in lines if "( -.- )" in line)
+            assert ears.index("/") == face.index("(") + 1, "sleeping face shifted away from ears"
+            assert face.index("z") == face.index("(") + 8, "sleep marker moved the face"
+            terminal.key(b"?")
+            if cols < 44:
+                for line in ("space / 1-4 pose", "n new kitty", "p pause / resume",
+                             "t palette", "h hide / show UI", "? / esc back", "q quit"):
+                    terminal.expect(line)
+            else:
+                for line in ("choose a pose", "meet a new kitty", "pause / resume",
+                             "change palette", "hide / show interface", "open / close help",
+                             "back, then quit", "quit anytime", "take your time. kitty is waiting."):
+                    terminal.expect(line)
+            terminal.key(b"\x1b")
+            terminal.expect("( -.- )")
+        terminal.quit()
+
+
 def resizes(binary: str, *args: str) -> None:
     with Terminal(binary, "--delay", "15000", *args, "sit") as terminal:
         terminal.expect("ckitty")
@@ -395,8 +460,33 @@ def messages(binary: str) -> None:
         assert "caf\u00e9".encode() in terminal.transcript, "message lost its printable UTF-8 bytes"
         terminal.quit()
 
-    message = "before\x1b[2Jmiddle\nnext\rtab\tback\bend\x07del\x7fafter"
-    sanitized = "before [2Jmiddle next tab back end del after"
+    # Emoji, ideographs and combining marks must remain intact and consume
+    # display columns, even when a wide character crosses the clipping edge.
+    for message, visible in (("caf\u00e9 \U0001f431 \u6f22\u5b57 e\u0301", "caf\u00e9 \U0001f431 \u6f22\u5b57 e\u0301"),
+                             ("x" * 15 + "\U0001f431tail", "x" * 15),
+                             ("x" * 14 + "\u6f22tail", "x" * 14 + "\u6f22"),
+                             ("x" * 15 + "e\u0301tail", "x" * 15 + "e\u0301")):
+        with Terminal(binary, "--message", message, "--delay", "2147483647", "sit",
+                      rows=8, cols=20) as terminal:
+            terminal.expect("ckitty")
+            terminal.expect(visible)
+            terminal.drain(0.05)
+            assert terminal.screen.text.splitlines()[1].strip() == visible, "message clipped by bytes or wrapped"
+            assert not terminal.screen.text.splitlines()[2].strip(), "message wrapped into the cat's row"
+            bytes(terminal.transcript).decode("utf-8", errors="strict")
+            terminal.quit()
+
+    for locale_name in ("C", "ckitty-invalid-locale"):
+        with Terminal(binary, "--message", "kitty \U0001f431 \u6f22\u5b57 e\u0301", "--delay", "2147483647", "sit",
+                      rows=8, cols=20, locale_name=locale_name) as terminal:
+            terminal.expect("kitty ")
+            terminal.drain(0.05)
+            assert all(value < 128 for value in terminal.transcript), "fallback locale emitted invalid multibyte text"
+            assert not terminal.screen.text.splitlines()[2].strip(), "fallback message wrapped"
+            terminal.quit()
+
+    message = "before\x1b[2Jmiddle\nnext\rtab\tback\bend\x07del\x7fafter\u0085c1\u009bend"
+    sanitized = "before [2Jmiddle next tab back end del after c1 end"
     with Terminal(binary, "--message", message, "--delay", "2147483647", "sit") as terminal:
         terminal.expect(sanitized)
         terminal.drain(0.05)
@@ -471,6 +561,38 @@ def partial_live_layout(binary: str) -> None:
         terminal.quit()
 
 
+def compact_live_timing(binary: str) -> None:
+    for rows, cols in ((12, 38), (30, 120)):
+        with Terminal(binary, "--live", "--grow-delay", "2147483647", "--delay", "15000", "sit",
+                      rows=rows, cols=cols) as terminal:
+            terminal.expect("ckitty")
+            if cols == 120:
+                terminal.resize(12, 38)
+            terminal.expect("( o.o )", timeout=0.8)
+            terminal.quit()
+
+    # The reverse layout change must switch back to growth timing, even if
+    # the compact animation's ordinary frame deadline is half an hour away.
+    with Terminal(binary, "--live", "--grow-delay", "1000", "--delay", "2147483647", "sit",
+                  rows=12, cols=38) as terminal:
+        terminal.expect("( -.- )")
+        terminal.resize(30, 120)
+        terminal.expect("sit / watching the world", timeout=1.5)
+        assert scene_marks(terminal) > 20, "expanding the compact kitty stalled its reveal"
+        terminal.quit()
+
+
+def screensaver_live_restart(binary: str) -> None:
+    with Terminal(binary, "--live", "--screensaver", "--grow-delay", "2147483647", "sit") as terminal:
+        terminal.expect("seed 123")
+        terminal.wait_for(lambda text: "seed 123" not in text, "screensaver did not choose a new kitty", timeout=8.8)
+        # The first new cell for this seed is an underscore. Include it while
+        # excluding the ground row and the optional ambient punctuation.
+        terminal.wait_for(lambda text: any(ch not in " .+" for row in terminal.screen.cells[5:-5] for ch in row),
+                          "screensaver inherited the previous kitty's long reveal deadline", timeout=0.5)
+        terminal.quit()
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(f"usage: {sys.argv[0]} PATH_TO_CKITTY", file=sys.stderr)
@@ -479,16 +601,19 @@ def main() -> int:
     try:
         controls(binary)
         quiet_and_slow_controls(binary)
+        compact_help_and_sleep(binary)
         resizes(binary)
         resizes(binary, "--live", "--grow-delay", "1000")
         palettes(binary)
         messages(binary)
         completed_live_layout(binary)
         partial_live_layout(binary)
-    except (AssertionError, OSError) as exc:
+        compact_live_timing(binary)
+        screensaver_live_restart(binary)
+    except (AssertionError, OSError, UnicodeError) as exc:
         print(f"terminal test failed: {exc}", file=sys.stderr)
         return 1
-    print("TERMINAL OK (controls, palettes, messages, quiet, pause/help, slow timing, live progress, resizes)")
+    print("TERMINAL OK (controls, palettes, Unicode messages, compact help, quiet, pause/help, slow timing, live progress, screensaver, resizes)")
     return 0
 
 
