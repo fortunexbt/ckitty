@@ -34,7 +34,17 @@ endif
 override CFLAGS += $(SANITIZE)
 override LDFLAGS += $(SANITIZE)
 
-.PHONY: all check test test-cli test-resize sanitize demo install uninstall clean
+# WebAssembly build: the same ckitty.c, with web_curses.c standing in for
+# ncurses and emitting ANSI to a terminal in the page.
+EMCC ?= emcc
+WEB_SRCS = $(SRCDIR)/ckitty.c $(SRCDIR)/ckitty_core.c $(SRCDIR)/web_curses.c
+WEB_OUT = web/public/ckitty.js
+EMFLAGS = -O3 -std=c11 -Wall -Wextra -DCKITTY_WEB \
+	-sASYNCIFY -sMODULARIZE=1 -sEXPORT_NAME=createCkitty -sINVOKE_RUN=0 \
+	-sEXPORTED_RUNTIME_METHODS=callMain -sALLOW_MEMORY_GROWTH=1 \
+	-sENVIRONMENT=web -sFILESYSTEM=0 --closure 0
+
+.PHONY: all check test test-cli test-resize sanitize demo install uninstall clean web
 
 all: $(APP)
 
@@ -64,6 +74,9 @@ test-resize: $(APP)
 
 demo: all
 	./tools/make-demo.sh
+
+web: $(WEB_SRCS) $(SRCDIR)/ckitty_core.h $(SRCDIR)/web_curses.h
+	$(EMCC) $(EMFLAGS) $(WEB_SRCS) -o $(WEB_OUT)
 
 sanitize:
 	$(MAKE) clean

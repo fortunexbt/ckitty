@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ckitty — a cat that lives in your terminal</title>
+<meta name="description" content="ckitty draws a procedural cat in C, one character at a time. This page runs that same C program as WebAssembly, in a real terminal.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0d0b09">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ckitty — a cat that lives in your terminal">
+<meta property="og:description" content="A procedural cat written in C11 and ncurses. The page runs the same renderer as WebAssembly.">
+<meta property="og:image" content="/og.png">
+<meta property="og:url" content="https://ckitty.vercel.app/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="/og.png">
+<link rel="preload" href="/fonts/space-mono-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/lib/xterm.css">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<a class="skip" href="#install">Skip to install instructions</a>
+
+<header class="bar">
+  <span class="wordmark">
+    <svg class="paw" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <ellipse cx="12" cy="15.2" rx="5.4" ry="4.4"/>
+      <circle cx="5.4" cy="10.4" r="2.3"/>
+      <circle cx="9.6" cy="6.6" r="2.3"/>
+      <circle cx="14.4" cy="6.6" r="2.3"/>
+      <circle cx="18.6" cy="10.4" r="2.3"/>
+    </svg>
+    ckitty
+  </span>
+  <a class="bar-link" href="https://github.com/fortunexbt/ckitty">
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false" class="mark">
+      <path d="M8 .2a8 8 0 0 0-2.5 15.6c.4.1.5-.2.5-.4v-1.5c-2.2.5-2.7-1-2.7-1-.4-.9-.9-1.2-.9-1.2-.7-.5 0-.5 0-.5.8.1 1.2.8 1.2.8.7 1.2 1.9.9 2.4.7.1-.5.3-.9.5-1.1-1.8-.2-3.6-.9-3.6-4 0-.9.3-1.6.8-2.1-.1-.2-.4-1 .1-2.1 0 0 .7-.2 2.2.8a7.5 7.5 0 0 1 4 0c1.5-1 2.2-.8 2.2-.8.5 1.1.2 1.9.1 2.1.5.5.8 1.2.8 2.1 0 3.1-1.8 3.8-3.6 4 .3.3.5.8.5 1.6v2.2c0 .2.1.5.6.4A8 8 0 0 0 8 .2Z"/>
+    </svg>
+    GitHub
+  </a>
+</header>
+
+<main>
+  <section class="hero">
+    <h1>A cat lives in your terminal.</h1>
+    <p class="deck">
+      ckitty is a C program that draws a procedural cat, one character at a time.
+      The cat below is that same C, compiled to WebAssembly and wired to a real
+      terminal in this page.
+    </p>
+  </section>
+
+  <section class="stage" aria-labelledby="stage-heading">
+    <h2 class="sr-only" id="stage-heading">The running program</h2>
+    <div class="window" id="window">
+      <div class="titlebar">
+        <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="title">ckitty --live</span>
+        <span class="grid" id="grid-size" aria-hidden="true"></span>
+      </div>
+      <div class="screen" id="screen" role="img" aria-label="An animated ASCII cat drawn in a terminal, with a status line showing its pose and seed."></div>
+      <div class="overlay" id="overlay" hidden>
+        <p>The cat wandered off.</p>
+        <button type="button" class="chip chip-wide" id="restart">Call it back</button>
+      </div>
+      <noscript><p class="fallback">This demo runs the real C renderer in WebAssembly, so it needs JavaScript. The terminal version needs neither: see the install commands below.</p></noscript>
+    </div>
+
+    <div class="controls" aria-label="Cat controls">
+      <button type="button" class="chip" data-key="n">new cat <kbd>n</kbd></button>
+      <button type="button" class="chip" data-key=" ">next pose <kbd>space</kbd></button>
+      <button type="button" class="chip" data-key="1">sit <kbd>1</kbd></button>
+      <button type="button" class="chip" data-key="2">sleep <kbd>2</kbd></button>
+      <button type="button" class="chip" data-key="3">play <kbd>3</kbd></button>
+      <button type="button" class="chip" data-key="4">walk <kbd>4</kbd></button>
+      <button type="button" class="chip" data-key="p">pause <kbd>p</kbd></button>
+      <button type="button" class="chip" data-key="t">palette <kbd>t</kbd></button>
+      <button type="button" class="chip" data-key="?">help <kbd>?</kbd></button>
+    </div>
+    <p class="aside">Your keyboard works here too, and the cat re-lays itself out when you resize the window.</p>
+  </section>
+
+  <section class="prose" id="install">
+    <h2>Put it in your own terminal</h2>
+    <p>Builds from source with a C compiler and ncurses. macOS and Linux, no runtime, no account.</p>
+
+    <div class="snippet">
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/fortunexbt/ckitty/main/install.sh \
+  | sh -s -- --prefix "$HOME/.local"</code></pre>
+      <button type="button" class="copy" data-copy="curl -fsSL https://raw.githubusercontent.com/fortunexbt/ckitty/main/install.sh | sh -s -- --prefix &quot;$HOME/.local&quot;">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5.5" y="5.5" width="8" height="9" rx="1.5"/><path d="M10.5 3.5h-7a1.5 1.5 0 0 0-1.5 1.5v7"/></svg>
+        <span>Copy</span>
+      </button>
+    </div>
+
+    <p>Or build it where it stands:</p>
+
+    <div class="snippet">
+      <pre><code>git clone https://github.com/fortunexbt/ckitty.git
+cd ckitty &amp;&amp; make &amp;&amp; ./ckitty</code></pre>
+      <button type="button" class="copy" data-copy="git clone https://github.com/fortunexbt/ckitty.git &amp;&amp; cd ckitty &amp;&amp; make &amp;&amp; ./ckitty">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5.5" y="5.5" width="8" height="9" rx="1.5"/><path d="M10.5 3.5h-7a1.5 1.5 0 0 0-1.5 1.5v7"/></svg>
+        <span>Copy</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="prose">
+    <h2>How the page runs the real thing</h2>
+    <p>
+      <b>One renderer.</b> <code>src/ckitty_core.c</code> composes every frame into a
+      character grid and never touches a terminal library. The native app and this page
+      both call it, so the cat you see here is the cat you install.
+    </p>
+    <p>
+      <b>A shim instead of a rewrite.</b> <code>src/web_curses.c</code> implements the
+      dozen ncurses calls that <code>src/ckitty.c</code> makes, flushes the grid as ANSI,
+      and hands <code>getch()</code> to the browser event loop. Nothing was ported to
+      JavaScript, and the native build still links real ncurses.
+    </p>
+    <p>
+      <b>Frames you can diff.</b> <code>ckitty --dump --seed 123 sit --frame 0</code>
+      prints the same art every run. The test suite leans on that, and so does the
+      banner in the README.
+    </p>
+  </section>
+</main>
+
+<footer>
+  <p>
+    <a href="https://github.com/fortunexbt/ckitty">Source</a> ·
+    <a href="https://github.com/fortunexbt/ckitty/blob/main/LICENSE">GPL-3.0</a> ·
+    C11 · ncurses · 65 KB of WebAssembly
+  </p>
+</footer>
+
+<script src="/lib/xterm.js"></script>
+<script src="/lib/addon-fit.js"></script>
+<script src="/ckitty.js"></script>
+<script src="/ckitty-page.js"></script>
+</body>
+</html>

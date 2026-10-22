@@ -23,7 +23,12 @@ ckitty/
 ├── src/                  # Source files
 │   ├── ckitty.c          # ncurses app + CLI (single unified binary)
 │   ├── ckitty_core.c     # Core generator/rendering (no ncurses)
-│   └── ckitty_core.h     # Core API used by app + tests
+│   ├── ckitty_core.h     # Core API used by app + tests
+│   ├── web_curses.c      # ncurses-to-ANSI shim for the WebAssembly build
+│   └── web_curses.h      # The ncurses subset ckitty.c uses
+├── web/                  # Browser demo (ckitty.vercel.app)
+│   ├── package.json      # Vendors the xterm.js dist into public/lib
+│   └── public/           # The whole static site, including ckitty.wasm
 └── tests/
     ├── test_ckitty_core.c # Deterministic core/property tests
     ├── test_cli.sh        # Headless CLI and error-path tests
@@ -37,10 +42,11 @@ ckitty/
 - **src/ckitty.c**: ncurses front-end (input loop + rendering to terminal)
 - **src/ckitty_core.c**: deterministic procedural generation + canvas primitives
 - **src/ckitty_core.h**: exported core types/constants
+- **src/web_curses.c/.h**: the ncurses calls `ckitty.c` makes, backed by a cell grid flushed as ANSI; built only by `make web`
 
 ### Build System
 
-- **Makefile**: Builds the single `ckitty` binary, runs tests/sanitizers, creates the demo, and installs/uninstalls
+- **Makefile**: Builds the single `ckitty` binary, runs tests/sanitizers, builds the WebAssembly demo (`make web`), creates the GIF, and installs/uninstalls
 - **install.sh**: Runs verification and installs to an explicit prefix without invoking sudo
 
 ### Documentation
