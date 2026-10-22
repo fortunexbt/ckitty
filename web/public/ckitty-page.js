@@ -128,19 +128,29 @@
   for (const button of document.querySelectorAll(".copy")) {
     const label = button.querySelector("span");
     let reset = 0;
-    button.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(button.dataset.copy);
-      } catch {
-        return;
-      }
-      label.textContent = "Copied";
+    const flash = (text) => {
+      label.textContent = text;
       button.dataset.done = "true";
       clearTimeout(reset);
       reset = setTimeout(() => {
         label.textContent = "Copy";
         delete button.dataset.done;
       }, 1600);
+    };
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy);
+        flash("Copied");
+      } catch {
+        /* A browser can refuse clipboard access. Select the command instead,
+         * so the keyboard shortcut still finishes the job. */
+        const range = document.createRange();
+        range.selectNodeContents(button.parentElement.querySelector("code"));
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        flash("Selected");
+      }
     });
   }
 

@@ -19,6 +19,9 @@ make check
 # Run ASan/UBSan checks
 make sanitize
 
+# Build the WebAssembly demo in web/public (needs emcc)
+make web
+
 # Install
 sudo make install
 ```
@@ -49,6 +52,7 @@ The project builds a single unified `ckitty` binary with a small core + ncurses 
 
 - `src/ckitty_core.c` / `src/ckitty_core.h`: deterministic procedural generation and a simple canvas.
 - `src/ckitty.c`: CLI parsing + ncurses loop (input, timing, rendering, screensaver/live mode).
+- `src/web_curses.c` / `src/web_curses.h`: the ncurses subset `ckitty.c` uses, backed by a cell grid that is flushed as ANSI to a browser terminal. `make web` compiles `ckitty.c` against it with Emscripten; nothing else in the build sees it.
 
 ### Rendering Pipeline (ncurses)
 
