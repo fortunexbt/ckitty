@@ -1,6 +1,10 @@
 #define _XOPEN_SOURCE 700
 
+#ifdef CKITTY_WEB
+#include "web_curses.h"
+#else
 #include <ncurses.h>
+#endif
 
 #include <errno.h>
 #include <getopt.h>

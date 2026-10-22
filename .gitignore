@@ -42,3 +42,7 @@ coverage/
 # OS specific
 Thumbs.db
 desktop.ini
+
+# Web demo dependencies (vendored copies live in web/public/lib)
+web/node_modules/
+.vercel

@@ -3,6 +3,11 @@
 All notable changes to ckitty are documented here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Add a WebAssembly build: `src/web_curses.c` stands in for ncurses, flushes the cell grid as ANSI, and hands `getch()` to the browser event loop, so the same `src/ckitty.c` drives the terminal and the page.
+- Add `make web` and the static demo in `web/public`, published at [ckitty.vercel.app](https://ckitty.vercel.app).
+
 ## 1.1.0 — 2026-09-08
 
 - Redraw all four poses with broad feline faces, rounded haunches, paired paws, and short curved tails; lower the walking and playing silhouettes and curl up the sleeping kitty.

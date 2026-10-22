@@ -1,0 +1,12 @@
+{
+  "name": "ckitty-web",
+  "private": true,
+  "description": "Static page that runs the ckitty C renderer as WebAssembly",
+  "scripts": {
+    "vendor": "mkdir -p public/lib && cp node_modules/@xterm/xterm/lib/xterm.js node_modules/@xterm/xterm/css/xterm.css node_modules/@xterm/addon-fit/lib/addon-fit.js public/lib/"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0"
+  }
+}

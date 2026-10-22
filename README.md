@@ -9,16 +9,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/fortunexbt/ckitty/blob/main/LICENSE">GPL-3.0</a>
+  <a href="https://ckitty.vercel.app">live demo</a>
+  · <a href="https://github.com/fortunexbt/ckitty/blob/main/LICENSE">GPL-3.0</a>
   · <a href="https://github.com/fortunexbt/ckitty/releases">releases</a>
   · C11 · ncurses · macOS + Linux
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/fortunexbt/ckitty/main/assets/ckitty-demo.gif" alt="A gallery of ckitty's deterministic ASCII frames" width="900">
+  <a href="https://ckitty.vercel.app"><img src="https://raw.githubusercontent.com/fortunexbt/ckitty/main/docs/web-demo.webp" alt="The ckitty web demo: a terminal window with an animated ASCII cat and pose controls under it" width="900"></a>
 </p>
 
-<p align="center"><em>A gallery of <code>--dump</code> frames; the interactive app adds color and controls.</em></p>
+<p align="center"><em><a href="https://ckitty.vercel.app">ckitty.vercel.app</a> runs this same C renderer, compiled to WebAssembly.</em></p>
 
 ckitty is a small native program that draws ASCII cats directly in your terminal. Broad faces, rounded haunches, little paired paws, and curled tails give each of its four poses a distinctly feline silhouette. Blinking eyes, soft steps, subtle coat variations, and ambient twinkles keep it alive without becoming noisy. A warm amber palette and an unobtrusive interface make it a cozy place to leave your terminal.
 
@@ -56,6 +57,19 @@ make
 
 Tagged releases also include checksumed Linux x86_64 and Apple silicon archives.
 
+## In a browser
+
+[ckitty.vercel.app](https://ckitty.vercel.app) runs the real program, not a reimplementation of it. `src/ckitty_core.c` composes every frame into a character grid without touching a terminal library, and `src/web_curses.c` implements the dozen ncurses calls `src/ckitty.c` makes: it flushes the grid as ANSI into [xterm.js](https://xtermjs.org) and hands `getch()` to the browser event loop through Emscripten's Asyncify. The native build still links real ncurses.
+
+```sh
+brew install emscripten   # or install the emsdk
+make web                  # writes web/public/ckitty.js and ckitty.wasm
+```
+
+`web/public` is the whole site, so any static server will do. The compiled output and the xterm.js dist are committed, so deploying needs no toolchain.
+
+The page carries the same four poses, palettes, help screen and live reveal as the terminal. It leaves out what only a terminal can give: the screensaver loop, `--message`, `NO_COLOR`, and piping `--dump` into other commands.
+
 ## The nice bits
 
 - `ckitty` — a cozy kitty in warm amber
@@ -91,6 +105,10 @@ For scripts, screenshots, tests, or just getting the same cat twice:
 ```sh
 ./ckitty --dump --seed 123 sit
 ```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fortunexbt/ckitty/main/assets/ckitty-demo.gif" alt="A gallery of ckitty's deterministic ASCII frames" width="900">
+</p>
 
 `--dump` does not initialize ncurses. It writes one clean frame to standard output with no ANSI escapes, and it accepts `--frame`, `--width`, and `--height` when you need a particular canvas. Themes and interactive controls do not change its deterministic output.
 
@@ -129,6 +147,7 @@ The renderer is deliberately small and deterministic. The useful checks are:
 ```sh
 make check       # build, renderer tests, CLI tests, resize tests
 make sanitize    # AddressSanitizer + UndefinedBehaviorSanitizer
+make web         # rebuild the WebAssembly demo (needs emcc)
 make demo        # rebuild the README GIF (ImageMagick + FFmpeg)
 ```
 
