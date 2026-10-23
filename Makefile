@@ -44,7 +44,7 @@ EMFLAGS = -O3 -std=c11 -Wall -Wextra -DCKITTY_WEB \
 	-sEXPORTED_RUNTIME_METHODS=callMain -sALLOW_MEMORY_GROWTH=1 \
 	-sENVIRONMENT=web -sFILESYSTEM=0 --closure 0
 
-.PHONY: all check test test-cli test-resize sanitize demo install uninstall clean web
+.PHONY: all check test test-cli test-resize test-web sanitize demo install uninstall clean web
 
 all: $(APP)
 
@@ -71,6 +71,10 @@ check: all test test-cli test-resize
 
 test-resize: $(APP)
 	python3 tests/test_resize.py ./$(APP)
+
+# Needs the playwright package; not part of `check` so CI stays dependency-free.
+test-web:
+	node tests/test_web_keys.mjs
 
 demo: all
 	./tools/make-demo.sh

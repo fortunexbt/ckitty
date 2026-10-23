@@ -108,7 +108,7 @@
     pendingLayout = requestAnimationFrame(layout);
   }).observe(screen);
 
-  document.addEventListener("keydown", (event) => {
+  function handleKeydown(event) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const onControl = document.activeElement instanceof HTMLButtonElement ||
       document.activeElement instanceof HTMLAnchorElement;
@@ -117,6 +117,19 @@
     if (!KEYS.has(key) && key !== "\u001b") return;
     event.preventDefault();
     sendKey(key);
+  }
+
+  /* Clicking the terminal focuses xterm's helper textarea, which swallows
+   * keydown before this listener hears it, so keys typed there go through
+   * xterm's own hook below and are skipped here to avoid handling them twice. */
+  document.addEventListener("keydown", (event) => {
+    if (!term.element.contains(event.target)) handleKeydown(event);
+  });
+
+  /* Returning false keeps xterm from processing the key itself. */
+  term.attachCustomKeyEventHandler((event) => {
+    if (event.type === "keydown") handleKeydown(event);
+    return false;
   });
 
   for (const chip of document.querySelectorAll(".chip[data-key]")) {
