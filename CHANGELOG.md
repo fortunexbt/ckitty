@@ -7,6 +7,7 @@ All notable changes to ckitty are documented here. The project follows
 
 - Add a WebAssembly build: `src/web_curses.c` stands in for ncurses, flushes the cell grid as ANSI, and hands `getch()` to the browser event loop, so the same `src/ckitty.c` drives the terminal and the page.
 - Add `make web` and the static demo in `web/public`, published at [ckitty.vercel.app](https://ckitty.vercel.app).
+- Size the web terminal so the cat fills it, put its controls on a row of keycaps that light up from the program's own status line, re-tint the page with the active palette, and show the `ckitty --seed` command that draws the same cat natively. `?seed=` in the address picks the starting cat.
 
 ## 1.1.0 — 2026-09-08
 

@@ -11,19 +11,50 @@
   font-display: swap;
 }
 
+/* The page takes its light from the cat's palette: pressing t in the
+ * terminal re-tints the room around it. Accent values are the xterm-256
+ * colours ckitty uses for fur (222, 153, 151). */
 :root {
-  --ink: #0d0b09;
-  --panel: #151110;
-  --panel-lift: #1d1815;
-  --line: #322a22;
-  --line-warm: #4a3b2b;
-  --text: #ece2d2;
-  --muted: #ab9a85;
-  --amber: #f2b85c;
-  --amber-deep: #c98a35;
+  --ink: #16110d;
+  --panel: #1b1511;
+  --tray: #221a15;
+  --cap: #30251d;
+  --cap-edge: #0f0b08;
+  --line: #352b23;
+  --text: #efe4d3;
+  --muted: #b2a18b;
+  --accent: #ffd787;
+  --accent-ink: #2a1d0c;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --page: 1140px;
+  --relight: 520ms ease;
+  --page: 1200px;
   color-scheme: dark;
+}
+
+:root[data-palette="moon"] {
+  --ink: #10121a;
+  --panel: #151722;
+  --tray: #1b1e2b;
+  --cap: #262a3b;
+  --cap-edge: #090a10;
+  --line: #2b3042;
+  --text: #e4e8f2;
+  --muted: #a3aac0;
+  --accent: #afd7ff;
+  --accent-ink: #0e1a28;
+}
+
+:root[data-palette="forest"] {
+  --ink: #0f140f;
+  --panel: #141a14;
+  --tray: #1a221a;
+  --cap: #253025;
+  --cap-edge: #080b08;
+  --line: #2a352a;
+  --text: #e3ecdf;
+  --muted: #a2b19d;
+  --accent: #afd7af;
+  --accent-ink: #102010;
 }
 
 *,
@@ -43,31 +74,30 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: var(--ink);
-  background-image: radial-gradient(120% 80% at 50% -10%, #1a1512 0%, rgba(26, 21, 18, 0) 60%);
-  background-repeat: no-repeat;
+  background: var(--ink);
   color: var(--text);
   font: 400 16px/1.6 "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  padding: 0 clamp(16px, 4vw, 40px) 0;
+  padding: 0 clamp(16px, 3vw, 40px);
+  transition: background-color var(--relight), color var(--relight);
 }
 
 ::selection {
-  background: rgba(242, 184, 92, 0.26);
-  color: #fff6e6;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text);
 }
 
 a {
-  color: var(--amber);
+  color: var(--accent);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
 
 a:hover {
-  color: #ffd08a;
+  color: var(--text);
 }
 
 :focus-visible {
-  outline: 2px solid var(--amber);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: 4px;
 }
@@ -95,10 +125,10 @@ pre {
   top: 8px;
   translate: -50% -200%;
   z-index: 10;
-  background: var(--panel-lift);
-  border: 1px solid var(--line-warm);
+  background: var(--tray);
+  border: 1px solid var(--line);
   padding: 8px 14px;
-  border-radius: 999px;
+  border-radius: 8px;
   text-decoration: none;
   transition: translate 160ms var(--ease-out);
 }
@@ -107,14 +137,15 @@ pre {
   translate: -50% 0;
 }
 
+/* Header: one quiet line, so the terminal below can take the room. */
 .bar {
   max-width: var(--page);
   margin: 0 auto;
-  padding: 22px 0 0;
+  min-height: 64px;
+  padding: 14px 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 10px 22px;
   font-size: 14px;
 }
 
@@ -122,14 +153,25 @@ pre {
   display: inline-flex;
   align-items: center;
   gap: 9px;
+  margin: 0;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1;
 }
 
 .paw {
-  width: 19px;
-  height: 19px;
-  fill: var(--amber);
+  width: 20px;
+  height: 20px;
+  fill: var(--accent);
+  transition: fill var(--relight);
+}
+
+.deck {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 .bar-link {
@@ -138,6 +180,7 @@ pre {
   gap: 8px;
   color: var(--muted);
   text-decoration: none;
+  min-height: 44px;
 }
 
 .bar-link:hover {
@@ -155,124 +198,74 @@ main {
   margin: 0 auto;
 }
 
-.hero {
-  display: grid;
-  gap: 18px 56px;
-  padding: clamp(30px, 5vh, 56px) 0 clamp(22px, 3vh, 32px);
-}
-
-@media (min-width: 880px) {
-  .hero {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-    align-items: end;
-  }
-}
-
-h1 {
-  margin: 0;
-  max-width: 17ch;
-  font-size: clamp(2rem, 4.6vw, 3.3rem);
-  font-weight: 700;
-  line-height: 1.04;
-  letter-spacing: -0.035em;
-  text-wrap: balance;
-}
-
-.deck {
-  margin: 0;
-  max-width: 54ch;
-  padding-bottom: 6px;
-  color: var(--muted);
-  font-size: clamp(0.95rem, 1.1vw, 1.0625rem);
-}
-
 .stage {
-  padding-bottom: clamp(56px, 9vh, 96px);
+  padding-bottom: clamp(56px, 10vh, 112px);
 }
 
-.window {
+/* The machine: a terminal with its own row of keys underneath, one object. */
+.machine {
   position: relative;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow:
-    0 1px 0 rgba(255, 229, 184, 0.05) inset,
-    0 22px 48px -26px rgba(0, 0, 0, 0.9);
+  border-radius: 14px;
+  box-shadow: 0 28px 60px -30px rgba(0, 0, 0, 0.85);
   overflow: hidden;
-  opacity: 0;
-  translate: 0 10px;
-  animation: rise 520ms var(--ease-out) 60ms forwards;
-}
-
-@keyframes rise {
-  to {
-    opacity: 1;
-    translate: 0 0;
-  }
+  transition: background-color var(--relight), border-color var(--relight);
 }
 
 .titlebar {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 0 14px;
-  height: 38px;
+  padding: 0 16px;
+  height: 36px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, #1c1714, var(--panel));
   font-size: 12px;
   color: var(--muted);
-}
-
-.dots {
-  display: inline-flex;
-  gap: 7px;
-}
-
-.dots i {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #3a2f26;
-}
-
-.dots i:first-child {
-  background: #6b4a35;
-}
-
-.dots i:nth-child(2) {
-  background: #6b5a2f;
+  transition: border-color var(--relight);
 }
 
 .title {
   flex: 1;
-  text-align: center;
-  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .grid {
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
   min-width: 56px;
   text-align: right;
 }
 
+/* The inset sits on xterm's own element, where the fit addon subtracts it. */
 .screen {
-  height: clamp(304px, 58vh, 600px);
-  padding: 12px 10px 10px 14px;
+  height: clamp(330px, calc(100svh - 230px), 760px);
   overflow: hidden;
 }
 
+.screen .xterm {
+  height: 100%;
+  padding: 10px 14px 6px;
+}
+
+/* xterm paints its own background. Leaving it transparent lets the panel
+ * colour, and its palette change, show through. */
+.screen .xterm .xterm-viewport,
+.screen .xterm .xterm-screen {
+  background-color: transparent !important;
+}
 
 .overlay {
   position: absolute;
-  inset: 38px 0 0;
+  inset: 36px 0 auto;
+  height: clamp(330px, calc(100svh - 230px), 760px);
   display: grid;
   place-content: center;
   justify-items: center;
   gap: 18px;
   text-align: center;
-  background: rgba(13, 11, 9, 0.84);
-  backdrop-filter: blur(3px);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
 }
 
 .overlay p {
@@ -286,65 +279,141 @@ h1 {
   color: var(--muted);
 }
 
-.controls {
+.tray {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 18px 0 0;
-}
-
-.chip {
-  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--panel-lift);
-  color: var(--text);
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  transition:
-    border-color 160ms var(--ease-out),
-    background-color 160ms var(--ease-out),
-    transform 140ms var(--ease-out);
+  justify-content: space-between;
+  gap: 14px 28px;
+  padding: 14px 14px 16px;
+  background: var(--tray);
+  border-top: 1px solid var(--line);
+  transition: background-color var(--relight), border-color var(--relight);
 }
 
-.chip kbd {
-  display: inline-grid;
-  place-items: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  border-radius: 5px;
-  border: 1px solid var(--line-warm);
-  background: #241d18;
-  color: var(--amber);
-  font-size: 11px;
+.keys {
+  display: flex;
+  flex: 1 1 640px;
+  max-width: 760px;
+  align-items: stretch;
+  gap: 10px 14px;
+}
+
+.cluster {
+  display: flex;
+  gap: 8px;
+}
+
+/* Keycaps: a legend on the face and a darker skirt underneath that
+ * disappears when the key goes down, by mouse, touch or real keyboard. */
+.key,
+.call-back {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  min-width: 58px;
+  min-height: 52px;
+  padding: 6px 10px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--cap);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 4px 0 var(--cap-edge);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  translate: 0 0;
+  transition:
+    translate 90ms var(--ease-out),
+    box-shadow 90ms var(--ease-out),
+    background-color var(--relight),
+    color 160ms var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.key kbd {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
   line-height: 1;
 }
 
-.chip-wide {
-  padding: 0 20px;
+.key-space {
+  flex: 1;
+  min-width: 130px;
+  max-width: 220px;
+}
+
+.key:active,
+.key.is-down,
+.call-back:active {
+  translate: 0 3px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 1px 0 var(--cap-edge);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .chip:hover {
-    border-color: var(--line-warm);
-    background: #241d18;
+  .key:hover,
+  .call-back:hover {
+    color: var(--text);
   }
 }
 
-.chip:active {
-  transform: scale(0.97);
+/* The current pose, and pause while paused, stay lit. */
+.key[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
-.aside {
-  margin: 16px 0 0;
+.key[aria-pressed="true"] kbd {
+  color: var(--accent-ink);
+}
+
+.key:focus-visible {
+  outline-offset: 4px;
+}
+
+.call-back {
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 20px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.recipe {
+  display: grid;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.recipe p {
+  margin: 0;
   color: var(--muted);
+  font-size: 12px;
+}
+
+.recipe-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.recipe code {
+  color: var(--accent);
   font-size: 13px;
+  white-space: nowrap;
+  transition: color var(--relight);
 }
 
 .prose {
@@ -364,13 +433,8 @@ h2 {
   color: var(--muted);
 }
 
-.prose b {
-  color: var(--text);
-  font-weight: 700;
-}
-
 .prose code {
-  color: var(--amber);
+  color: var(--accent);
   font-size: 0.9em;
   overflow-wrap: anywhere;
 }
@@ -381,19 +445,21 @@ h2 {
   align-items: flex-start;
   gap: 12px;
   margin: 0 0 22px;
-  padding: 14px 14px 14px 16px;
+  padding: 12px 12px 12px 16px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
+  transition: background-color var(--relight), border-color var(--relight);
 }
 
 .snippet pre {
   flex: 1;
   margin: 0;
+  padding-top: 4px;
   overflow-x: auto;
   font-size: 13px;
   line-height: 1.7;
-  color: #d8cbb8;
+  color: var(--text);
 }
 
 .copy {
@@ -401,11 +467,11 @@ h2 {
   align-items: center;
   gap: 7px;
   flex: none;
-  height: 32px;
+  height: 34px;
   padding: 0 11px;
   border-radius: 7px;
   border: 1px solid var(--line);
-  background: var(--panel-lift);
+  background: var(--tray);
   color: var(--muted);
   font: inherit;
   font-size: 12px;
@@ -429,7 +495,6 @@ h2 {
 @media (hover: hover) and (pointer: fine) {
   .copy:hover {
     color: var(--text);
-    border-color: var(--line-warm);
   }
 }
 
@@ -438,8 +503,8 @@ h2 {
 }
 
 .copy[data-done="true"] {
-  color: var(--amber);
-  border-color: var(--amber-deep);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 footer {
@@ -447,27 +512,68 @@ footer {
   margin: 0 auto;
   padding: 26px 0 40px;
   border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
   color: var(--muted);
   font-size: 13px;
 }
 
-footer p {
-  margin: 0;
-}
-
-@media (max-width: 640px) {
-  .screen {
-    height: clamp(300px, 50vh, 420px);
-    padding: 10px 8px 8px 10px;
+@media (max-width: 720px) {
+  .bar {
+    flex-wrap: wrap;
+    padding-bottom: 12px;
   }
 
-  .controls {
-    gap: 7px;
+  .bar-link {
+    margin-left: auto;
   }
 
-  .chip {
+  .deck {
+    order: 3;
+    flex-basis: 100%;
     font-size: 13px;
-    padding: 0 12px;
+  }
+
+  /* A phone is narrow before it is short, so the screen is sized from its
+   * width: just tall enough for ckitty's full layout at that column count. */
+  .screen,
+  .overlay {
+    height: clamp(270px, 78vw, 460px);
+  }
+
+  .screen .xterm {
+    padding: 8px 8px 4px 10px;
+  }
+
+  .tray {
+    padding: 12px 10px 14px;
+  }
+
+  .keys {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    gap: 10px 8px;
+  }
+
+  .recipe-line {
+    flex-wrap: wrap;
+  }
+
+  .recipe code {
+    font-size: 12px;
+    white-space: normal;
+  }
+
+  .cluster,
+  .key-space {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .cluster .key {
+    flex: 1;
+    min-width: 0;
   }
 }
 
@@ -478,10 +584,5 @@ footer p {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-  }
-
-  .window {
-    opacity: 1;
-    translate: 0 0;
   }
 }
