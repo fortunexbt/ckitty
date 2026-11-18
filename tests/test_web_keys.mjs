@@ -1,6 +1,7 @@
 // Regression check for the web build: keys must reach ckitty both before and
-// after the terminal is clicked. A click moves focus to xterm's helper
-// textarea, which used to swallow keydown before the page could see it.
+// after the terminal is clicked, and the page must follow the program's state.
+// A click moves focus to xterm's helper textarea, which used to swallow
+// keydown before the page could see it.
 //
 //   node tests/test_web_keys.mjs        (needs the `playwright` package)
 
@@ -47,8 +48,15 @@ try {
       const errors = [];
       page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
       page.on("pageerror", (e) => errors.push(e.message));
-      await page.goto(url);
+      await page.goto(`${url}?seed=123`);
       await page.waitForFunction(() => document.querySelector("#screen .xterm-rows")?.textContent.trim().length > 0);
+
+      const fits = await page.evaluate(() =>
+        document.querySelector("#screen .xterm-screen").offsetWidth <= document.getElementById("screen").clientWidth);
+      check(fits, `${label}: the terminal grid fits its window`);
+      await page.waitForFunction(() => document.getElementById("recipe-command").textContent.startsWith("ckitty --seed 123 "), null, { timeout: 5000 })
+        .then(() => check(true, `${label}: ?seed=123 reaches the program and the recipe`))
+        .catch(() => check(false, `${label}: ?seed=123 reaches the program and the recipe`));
 
       await page.evaluate(() => {
         const write = window.ckittyTerminalWrite;
@@ -64,6 +72,11 @@ try {
         const focused = await page.evaluate(() => document.activeElement?.classList.contains("xterm-helper-textarea"));
         check(focused, `${label}: click focuses xterm's helper textarea`);
       }
+
+      await page.keyboard.press("t");
+      await page.waitForFunction(() => document.documentElement.dataset.palette === "moon", null, { timeout: 5000 })
+        .then(() => check(true, `${label}: 't' re-tints the page to the moon palette`))
+        .catch(() => check(false, `${label}: 't' re-tints the page to the moon palette`));
 
       await page.keyboard.press("?");
       await page.waitForFunction(() => window.written.includes("open / close help"), null, { timeout: 5000 })

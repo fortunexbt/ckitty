@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://ckitty.vercel.app"><img src="https://raw.githubusercontent.com/fortunexbt/ckitty/main/docs/web-demo.webp" alt="The ckitty web demo: a terminal window with an animated ASCII cat and pose controls under it" width="900"></a>
+  <a href="https://ckitty.vercel.app"><img src="https://raw.githubusercontent.com/fortunexbt/ckitty/main/docs/web-demo.webp" alt="The ckitty web demo: a large ASCII cat playing in a terminal window, with a row of keycaps for its poses and palettes underneath" width="900"></a>
 </p>
 
 <p align="center"><em><a href="https://ckitty.vercel.app">ckitty.vercel.app</a> runs this same C renderer, compiled to WebAssembly.</em></p>
@@ -68,7 +68,7 @@ make web                  # writes web/public/ckitty.js and ckitty.wasm
 
 `web/public` is the whole site, so any static server will do. The compiled output and the xterm.js dist are committed, so deploying needs no toolchain.
 
-The page carries the same four poses, palettes, help screen and live reveal as the terminal. It leaves out what only a terminal can give: the screensaver loop, `--message`, `NO_COLOR`, and piping `--dump` into other commands.
+The page carries the same four poses, palettes, help screen and live reveal as the terminal. Under the keys it shows the `ckitty --seed` command that draws the cat on screen, and `?seed=123` in the address starts on the cat `ckitty --seed 123` draws. It leaves out what only a terminal can give: the screensaver loop, `--message`, `NO_COLOR`, and piping `--dump` into other commands.
 
 ## The nice bits
 
